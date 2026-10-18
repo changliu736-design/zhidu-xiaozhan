@@ -5,7 +5,13 @@
 
 ## 🖼️ 界面预览
 
-![登录页](docs/screenshots/login-card.png)
+| 界面 | 界面 |
+|---|---|
+| **主界面：文献列表 + 原文对照**<br>![主界面](docs/screenshots/main.png) | **溯源问答：答案带「第 4 页」出处**<br>![溯源问答](docs/screenshots/qa-citation.png) |
+| **表格与公式：引用表 1 并附页码**<br>![表格与公式](docs/screenshots/table-formula.png) | **OCR 扫描页：纯图片的第 8 页也能问答**<br>![OCR 扫描页](docs/screenshots/ocr-answer.png) |
+| **多篇对比：同时引用两篇论文**<br>![多篇对比](docs/screenshots/library-compare.png) | **管理后台：用户、封禁与审计日志**<br>![管理后台](docs/screenshots/admin.png) |
+
+> 更多界面（登录、注册、改密码）见 [docs/screenshots](docs/screenshots/)。
 
 ---
 
@@ -45,6 +51,7 @@ dachuang/
 │   ├── check_frontend.py        # 前端语法与结构检查
 │   ├── test_render.py           # 前端渲染逻辑单测
 │   └── reset_state.py           # 把项目恢复到"还没注册过"的干净状态
+├── samples/                     # 演示用虚构论文 + 提问脚本
 └── backend/
     ├── app.py                   # 后端主程序：路由、鉴权、流式接口
     ├── config.py                # 集中配置（路径、模型、检索参数、离线开关）
@@ -151,6 +158,16 @@ python app.py
 
 ---
 
+## 🎬 演示素材
+
+`samples/` 下提供两篇**虚构的演示论文**和一份提问脚本，覆盖摘要、溯源问答、表格/公式、指定页码、OCR 扫描页、学术翻译和多篇对比：
+
+- [samples/README.md](samples/README.md) —— 演示步骤、预期答案和截图清单
+- [lightrag_demo.pdf](samples/lightrag_demo.pdf) —— 8 页主论文，第 8 页是纯图片扫描页（触发 OCR）
+- [bm25_rag_demo.pdf](samples/bm25_rag_demo.pdf) —— 5 页对照论文，用于全库检索与多篇比较
+
+---
+
 ## 🔧 常见问题
 
 | 现象 | 原因与处理 |
@@ -211,6 +228,21 @@ python tests/test_render.py       # 前端引用渲染逻辑单测（需要 node
 ---
 
 ## 🧱 技术实现
+
+```mermaid
+flowchart LR
+    A["上传 PDF / DOCX / MD / TXT"] --> B["页面解析"]
+    B -->|扫描页| C["RapidOCR"]
+    B --> D["按页 / 章节分块"]
+    C --> D
+    D --> E["Qwen3-Embedding + FAISS"]
+    D --> F["BM25"]
+    E --> G["混合检索"]
+    F --> G
+    G --> H["bge-reranker 重排"]
+    H --> I["DeepSeek 生成"]
+    I --> J["带页码出处的答案"]
+```
 
 - **检索链路**：PDF 按页解析 → 带页码分块 → Qwen3-Embedding 向量索引（FAISS）+ BM25 → bge-reranker 重排 → 带出处生成
 - **扫描件兜底**：RapidOCR 自动补齐图片页文字，OCR 开关与阈值可配置
