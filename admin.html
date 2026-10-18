@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 - 智读小站</title>
+    <link rel="icon" type="image/svg+xml" href="vendor/favicon.svg">
+    <script src="vendor/js/tailwind.js"></script>
+    <link href="vendor/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#1e40af',
+                        secondary: '#3b82f6',
+                        accent: '#60a5fa',
+                        neutral: '#f1f5f9',
+                        'neutral-dark': '#94a3b8',
+                    },
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <style>
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: #f1f5f9; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
+        .fade-in { animation: fadeIn .18s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        #toast-box { pointer-events: none; }
+        #toast-box > div { pointer-events: auto; }
+        table th { white-space: nowrap; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-gray-800">
+
+<header class="bg-white shadow-sm border-b border-gray-200">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="h-10 w-10 bg-primary rounded-lg flex items-center justify-center">
+                <span class="text-white font-bold text-xl">智</span>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-primary leading-tight">管理后台</h1>
+                <p class="text-xs text-gray-400 leading-tight">用户与文献管理 · 每次敏感操作都写入审计日志</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <span class="text-sm text-gray-600">
+                <i class="fa fa-user-circle-o text-gray-400 mr-1"></i><span id="me-name">…</span>
+            </span>
+            <a href="index.html" class="text-xs px-3 py-1.5 bg-neutral text-gray-600 rounded-md hover:bg-gray-200">
+                <i class="fa fa-arrow-left mr-1"></i>返回文献库
+            </a>
+            <button id="logout-btn" class="text-xs text-gray-400 hover:text-red-500">退出</button>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-5">
+
+    <!-- 无权限 / 未登录 -->
+    <div id="access-panel" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 p-10 text-center">
+        <i class="fa fa-lock text-4xl text-gray-300"></i>
+        <p id="access-message" class="mt-4 text-sm text-gray-600"></p>
+        <a href="index.html" class="inline-block mt-5 text-xs px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-800">
+            返回文献库
+        </a>
+    </div>
+
+    <div id="app-panel" class="hidden">
+
+        <!-- 概览 -->
+        <div id="stats" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5"></div>
+
+        <!-- 标签页 -->
+        <div class="flex items-center space-x-2 mb-3">
+            <button data-tab="users" class="px-4 py-2 text-sm rounded-lg bg-primary text-white shadow-sm">
+                <i class="fa fa-users mr-1"></i>用户
+            </button>
+            <button data-tab="documents" class="px-4 py-2 text-sm rounded-lg text-gray-500 hover:bg-white">
+                <i class="fa fa-files-o mr-1"></i>文献
+            </button>
+            <button data-tab="audit" class="px-4 py-2 text-sm rounded-lg text-gray-500 hover:bg-white">
+                <i class="fa fa-history mr-1"></i>审计日志
+            </button>
+            <span id="page-status" class="text-xs text-gray-400 ml-2"></span>
+        </div>
+
+        <!-- 用户 -->
+        <section id="tab-users" class="bg-white rounded-xl shadow-sm border border-gray-200">
+            <div class="p-3 border-b border-gray-100 flex flex-wrap items-center gap-2">
+                <div class="relative">
+                    <i class="fa fa-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-300 text-xs"></i>
+                    <input id="user-search" type="text" placeholder="搜索用户名或 ID"
+                           class="text-xs border border-gray-300 rounded-lg py-1.5 pl-7 pr-3 w-56 focus:outline-none focus:ring-1 focus:ring-primary">
+                </div>
+                <button id="user-search-btn" class="text-xs px-3 py-1.5 bg-neutral text-gray-600 rounded-md hover:bg-gray-200">搜索</button>
+                <button id="user-refresh-btn" class="text-xs px-3 py-1.5 text-gray-500 hover:text-primary">
+                    <i class="fa fa-refresh mr-1"></i>刷新
+                </button>
+                <span id="users-summary" class="text-xs text-gray-400 ml-auto"></span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-gray-500">
+                        <tr>
+                            <th class="text-left px-3 py-2">用户名</th>
+                            <th class="text-left px-3 py-2">角色</th>
+                            <th class="text-left px-3 py-2">状态</th>
+                            <th class="text-right px-3 py-2">文献数</th>
+                            <th class="text-right px-3 py-2">占用空间</th>
+                            <th class="text-left px-3 py-2">最近上传</th>
+                            <th class="text-left px-3 py-2">注册时间</th>
+                            <th class="text-right px-3 py-2">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-body"></tbody>
+                </table>
+            </div>
+            <div class="p-3 border-t border-gray-100 flex items-center justify-end gap-2 text-xs text-gray-500">
+                <button id="users-prev" class="px-2.5 py-1 border border-gray-200 rounded hover:bg-slate-50 disabled:opacity-40">上一页</button>
+                <span id="users-page"></span>
+                <button id="users-next" class="px-2.5 py-1 border border-gray-200 rounded hover:bg-slate-50 disabled:opacity-40">下一页</button>
+            </div>
+        </section>
+
+        <!-- 文献 -->
+        <section id="tab-documents" class="hidden bg-white rounded-xl shadow-sm border border-gray-200">
+            <div class="px-3 py-2 bg-blue-50 border-b border-blue-100 text-[11px] text-blue-700 leading-relaxed">
+                <i class="fa fa-shield mr-1"></i>
+                默认只展示文献元数据，不提供正文或全量 PDF 浏览。处理举报时请点「核查查看」，
+                填写事由后签发单篇短期授权；每次签发和每次实际打开都会记录到审计日志。
+            </div>
+            <div class="p-3 border-b border-gray-100 flex flex-wrap items-center gap-2">
+                <div class="relative">
+                    <i class="fa fa-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-300 text-xs"></i>
+                    <input id="doc-search" type="text" placeholder="搜索标题 / 分类 / 标签 / 用户"
+                           class="text-xs border border-gray-300 rounded-lg py-1.5 pl-7 pr-3 w-64 focus:outline-none focus:ring-1 focus:ring-primary">
+                </div>
+                <select id="doc-owner" class="text-xs border border-gray-300 rounded-lg py-1.5 px-2 bg-white focus:outline-none focus:ring-1 focus:ring-primary">
+                    <option value="">全部用户</option>
+                </select>
+                <button id="doc-search-btn" class="text-xs px-3 py-1.5 bg-neutral text-gray-600 rounded-md hover:bg-gray-200">筛选</button>
+                <button id="doc-refresh-btn" class="text-xs px-3 py-1.5 text-gray-500 hover:text-primary">
+                    <i class="fa fa-refresh mr-1"></i>刷新
+                </button>
+                <span id="docs-summary" class="text-xs text-gray-400 ml-auto"></span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-gray-500">
+                        <tr>
+                            <th class="text-left px-3 py-2">标题</th>
+                            <th class="text-left px-3 py-2">所属用户</th>
+                            <th class="text-left px-3 py-2">分类 / 标签</th>
+                            <th class="text-left px-3 py-2">页数 / 块数</th>
+                            <th class="text-left px-3 py-2">索引</th>
+                            <th class="text-left px-3 py-2">上传时间</th>
+                            <th class="text-right px-3 py-2">大小</th>
+                            <th class="text-right px-3 py-2">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="docs-body"></tbody>
+                </table>
+            </div>
+            <div class="p-3 border-t border-gray-100 flex items-center justify-end gap-2 text-xs text-gray-500">
+                <button id="docs-prev" class="px-2.5 py-1 border border-gray-200 rounded hover:bg-slate-50 disabled:opacity-40">上一页</button>
+                <span id="docs-page"></span>
+                <button id="docs-next" class="px-2.5 py-1 border border-gray-200 rounded hover:bg-slate-50 disabled:opacity-40">下一页</button>
+            </div>
+        </section>
+
+        <!-- 审计 -->
+        <section id="tab-audit" class="hidden bg-white rounded-xl shadow-sm border border-gray-200">
+            <div class="p-3 border-b border-gray-100 flex flex-wrap items-center gap-2">
+                <select id="audit-action" class="text-xs border border-gray-300 rounded-lg py-1.5 px-2 bg-white focus:outline-none focus:ring-1 focus:ring-primary">
+                    <option value="">全部操作</option>
+                    <option value="admin.user.ban">封禁账号</option>
+                    <option value="admin.user.unban">解封账号</option>
+                    <option value="admin.document.delete">删除文献</option>
+                    <option value="admin.document.view_grant">签发查看授权</option>
+                    <option value="admin.document.view">查看原始文件</option>
+                    <option value="admin.access.denied">越权访问被拒</option>
+                </select>
+                <button id="audit-refresh-btn" class="text-xs px-3 py-1.5 text-gray-500 hover:text-primary">
+                    <i class="fa fa-refresh mr-1"></i>刷新
+                </button>
+                <span id="audit-summary" class="text-xs text-gray-400 ml-auto"></span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-slate-50 text-gray-500">
+                        <tr>
+                            <th class="text-left px-3 py-2">时间</th>
+                            <th class="text-left px-3 py-2">操作</th>
+                            <th class="text-left px-3 py-2">操作者</th>
+                            <th class="text-left px-3 py-2">对象</th>
+                            <th class="text-left px-3 py-2">原因 / 事由</th>
+                            <th class="text-left px-3 py-2">IP</th>
+                            <th class="text-left px-3 py-2">详情</th>
+                        </tr>
+                    </thead>
+                    <tbody id="audit-body"></tbody>
+                </table>
+            </div>
+            <div class="p-3 border-t border-gray-100 flex items-center justify-end gap-2 text-xs text-gray-500">
+                <button id="audit-prev" class="px-2.5 py-1 border border-gray-200 rounded hover:bg-slate-50 disabled:opacity-40">上一页</button>
+                <span id="audit-page"></span>
+                <button id="audit-next" class="px-2.5 py-1 border border-gray-200 rounded hover:bg-slate-50 disabled:opacity-40">下一页</button>
+            </div>
+        </section>
+
+    </div>
+</main>
+
+<!-- 通用原因弹窗：封禁 / 解封 / 删除 -->
+<div id="reason-modal" class="hidden fixed inset-0 bg-black/40 z-40 items-center justify-center p-4">
+    <div class="fade-in bg-white rounded-xl shadow-2xl w-full max-w-md p-5">
+        <h3 id="reason-title" class="text-base font-semibold text-gray-800"></h3>
+        <p id="reason-desc" class="text-xs text-gray-500 mt-2 leading-relaxed"></p>
+        <label id="reason-label" class="block text-xs text-gray-600 mt-4 mb-1">原因</label>
+        <textarea id="reason-input" rows="3" maxlength="500"
+                  class="w-full text-xs border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-primary"></textarea>
+        <p id="reason-error" class="hidden text-[11px] text-red-500 mt-1"></p>
+        <div class="flex justify-end gap-2 mt-4">
+            <button id="reason-cancel" class="text-xs px-4 py-1.5 text-gray-500 rounded-md hover:bg-slate-100">取消</button>
+            <button id="reason-confirm" class="text-xs px-4 py-1.5 bg-primary text-white rounded-md hover:bg-blue-800">确认</button>
+        </div>
+    </div>
+</div>
+
+<!-- 核查查看授权弹窗 -->
+<div id="grant-modal" class="hidden fixed inset-0 bg-black/40 z-40 items-center justify-center p-4">
+    <div class="fade-in bg-white rounded-xl shadow-2xl w-full max-w-lg p-5">
+        <h3 id="grant-title" class="text-base font-semibold text-gray-800">核查查看</h3>
+        <p id="grant-meta" class="text-[11px] text-gray-400 mt-1"></p>
+
+        <div id="grant-form">
+            <p class="text-xs text-gray-500 mt-3 leading-relaxed">
+                授权只对当前这一篇文献有效，默认 10 分钟后失效；签发与每次打开都会留痕。
+            </p>
+            <label class="block text-xs text-gray-600 mt-4 mb-1">核查事由（必填）</label>
+            <textarea id="grant-reason" rows="3" maxlength="300" placeholder="例如：用户举报该文献含违规内容"
+                      class="w-full text-xs border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-primary"></textarea>
+            <label class="block text-xs text-gray-600 mt-3 mb-1">举报编号 / 工单号（可选）</label>
+            <input id="grant-report" type="text" maxlength="120"
+                   class="w-full text-xs border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-primary">
+            <p id="grant-error" class="hidden text-[11px] text-red-500 mt-1"></p>
+            <div class="flex justify-end gap-2 mt-4">
+                <button id="grant-cancel" class="text-xs px-4 py-1.5 text-gray-500 rounded-md hover:bg-slate-100">取消</button>
+                <button id="grant-submit" class="text-xs px-4 py-1.5 bg-primary text-white rounded-md hover:bg-blue-800">签发授权</button>
+            </div>
+        </div>
+
+        <div id="grant-result" class="hidden">
+            <div class="mt-4 bg-green-50 border border-green-200 rounded-lg p-3">
+                <p class="text-xs text-green-700 font-medium">
+                    <i class="fa fa-check-circle mr-1"></i>授权已签发，并已写入审计日志
+                </p>
+                <p id="grant-expiry" class="text-[11px] text-green-600 mt-1"></p>
+                <a id="grant-link" href="#" target="_blank" rel="noopener"
+                   class="inline-block mt-3 text-xs px-3 py-1.5 bg-primary text-white rounded-md hover:bg-blue-800">
+                    <i class="fa fa-external-link mr-1"></i>打开原始文件
+                </a>
+                <button id="grant-copy" class="ml-1 text-xs px-3 py-1.5 bg-white border border-green-300 text-green-700 rounded-md hover:bg-green-100">
+                    <i class="fa fa-link mr-1"></i>复制链接
+                </button>
+            </div>
+            <div class="flex justify-end mt-4">
+                <button id="grant-close" class="text-xs px-4 py-1.5 text-gray-500 rounded-md hover:bg-slate-100">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toast-box" class="fixed bottom-5 right-5 z-50 space-y-2 w-80"></div>
+
+<script>
+// ==================================================================== 基础
+const API_BASE = (location.protocol === 'file:') ? 'http://127.0.0.1:5000' : '';
+const TOKEN_KEY = 'zd_token';
+const PAGE_SIZE = 50;
+
+const state = {
+    me: null,
+    tab: 'users',
+    users: [], usersTotal: 0, usersOffset: 0,
+    allUsers: [],
+    documents: [], docsTotal: 0, docsOffset: 0,
+    audit: [], auditTotal: 0, auditOffset: 0,
+    stats: {},
+    reasonHandler: null, reasonRequired: true,
+    grantDoc: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+function escapeAttr(text) {
+    return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
+function authHeaders(extra) {
+    const headers = Object.assign({}, extra || {});
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    return headers;
+}
+function fmtTime(value) { return value ? String(value).replace('T', ' ') : '—'; }
+function fmtSize(bytes) {
+    const n = Number(bytes || 0);
+    if (!n) return '0 B';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+}
+function actionLabel(action) {
+    return ({
+        'admin.user.ban': '封禁账号',
+        'admin.user.unban': '解封账号',
+        'admin.document.delete': '删除文献',
+        'admin.document.view_grant': '签发查看授权',
+        'admin.document.view': '查看原始文件',
+        'admin.access.denied': '越权访问被拒',
+    })[action] || action || '—';
+}
+function actionClass(action) {
+    if (action === 'admin.access.denied') return 'bg-red-50 text-red-600';
+    if (action === 'admin.document.delete') return 'bg-rose-50 text-rose-600';
+    if (action === 'admin.user.ban') return 'bg-amber-50 text-amber-700';
+    if (action === 'admin.user.unban') return 'bg-green-50 text-green-700';
+    return 'bg-blue-50 text-blue-700';
+}
+
+async function api(path, options) {
+    const opts = Object.assign({}, options || {});
+    opts.headers = authHeaders(Object.assign({}, (options && options.headers) || {}));
+    const response = await fetch(API_BASE + path, opts);
+    let data = {};
+    try { data = await response.json(); } catch (error) { /* 允许空响应 */ }
+    if (response.status === 401) {
+        location.href = 'index.html';
+        throw new Error('登录已过期');
+    }
+    if (!response.ok) {
+        const error = new Error(data.error || ('请求失败（' + response.status + '）'));
+        error.status = response.status;
+        error.code = data.code;
+        throw error;
+    }
+    return data;
+}
+
+// ==================================================================== 提示
+function toast(message, type) {
+    const box = document.createElement('div');
+    const style = type === 'error'
+        ? 'bg-red-50 border-red-200 text-red-700'
+        : 'bg-white border-gray-200 text-gray-700';
+    box.className = 'fade-in text-xs px-3 py-2 rounded-lg shadow-lg border ' + style;
+    box.textContent = message;
+    $('toast-box').appendChild(box);
+    setTimeout(() => { box.remove(); }, 3500);
+}
+function setStatus(message, isError) {
+    const el = $('page-status');
+    el.textContent = message || '';
+    el.className = 'text-xs ml-2 ' + (isError ? 'text-red-500' : 'text-gray-400');
+}
+
+// ==================================================================== 入口
+async function boot() {
+    if (!getToken()) {
+        showAccess('请先在文献库页面登录管理员账号，再进入管理后台。');
+        return;
+    }
+    try {
+        const data = await api('/api/auth/me');
+        if (!data.user || data.user.role !== 'admin') {
+            showAccess('当前账号不是管理员，无法进入管理后台。');
+            return;
+        }
+        state.me = data.user;
+        $('me-name').textContent = data.user.username;
+        $('app-panel').classList.remove('hidden');
+        await Promise.all([loadStats(), loadOwnerOptions(), loadUsers(true)]);
+    } catch (error) {
+        showAccess(error.message || '无法验证管理员身份');
+    }
+}
+
+function showAccess(message) {
+    $('app-panel').classList.add('hidden');
+    $('access-panel').classList.remove('hidden');
+    $('access-message').textContent = message;
+}
+
+async function logout() {
+    try { await fetch(API_BASE + '/api/auth/logout', { method: 'POST', headers: authHeaders() }); } catch (error) { /* 忽略 */ }
+    localStorage.removeItem(TOKEN_KEY);
+    location.href = 'index.html';
+}
+
+// ==================================================================== 概览
+async function loadStats() {
+    try {
+        state.stats = await api('/api/admin/stats');
+        renderStats();
+    } catch (error) {
+        setStatus(error.message, true);
+    }
+}
+function renderStats() {
+    const s = state.stats;
+    const cards = [
+        ['用户总数', s.users, 'fa-users', 'text-blue-600 bg-blue-50'],
+        ['管理员', s.admins, 'fa-shield', 'text-indigo-600 bg-indigo-50'],
+        ['已封禁', s.banned, 'fa-ban', 'text-red-600 bg-red-50'],
+        ['文献总数', s.documents, 'fa-files-o', 'text-emerald-600 bg-emerald-50'],
+        ['占用空间', fmtSize(s.storage_bytes), 'fa-database', 'text-amber-600 bg-amber-50'],
+        ['审计记录', s.audit_entries, 'fa-history', 'text-gray-600 bg-gray-100'],
+    ];
+    $('stats').innerHTML = cards.map(([label, value, icon, cls]) => `
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex items-center gap-3">
+            <div class="h-9 w-9 rounded-lg flex items-center justify-center ${cls}">
+                <i class="fa ${icon}"></i>
+            </div>
+            <div class="min-w-0">
+                <div class="text-[11px] text-gray-400">${label}</div>
+                <div class="text-base font-semibold text-gray-800 truncate">${escapeHtml(value ?? 0)}</div>
+            </div>
+        </div>`).join('');
+}
+
+// ==================================================================== 标签页
+function setTab(tab) {
+    state.tab = tab;
+    document.querySelectorAll('[data-tab]').forEach((el) => {
+        const active = el.dataset.tab === tab;
+        el.className = 'px-4 py-2 text-sm rounded-lg ' +
+            (active ? 'bg-primary text-white shadow-sm'
+                    : 'text-gray-500 hover:bg-white');
+    });
+    ['users', 'documents', 'audit'].forEach((name) => {
+        $('tab-' + name).classList.toggle('hidden', name !== tab);
+    });
+    setStatus('');
+    if (tab === 'users') loadUsers(true);
+    if (tab === 'documents') loadDocuments(true);
+    if (tab === 'audit') loadAudit(true);
+}
+
+// ==================================================================== 用户
+async function loadUsers(reset) {
+    if (reset) state.usersOffset = 0;
+    const query = $('user-search').value.trim();
+    setStatus('正在加载账号…');
+    try {
+        const params = new URLSearchParams({ limit: PAGE_SIZE, offset: state.usersOffset, q: query });
+        const data = await api('/api/admin/users?' + params.toString());
+        state.users = data.users || [];
+        state.usersTotal = data.total || 0;
+        renderUsers();
+        setStatus('');
+    } catch (error) {
+        setStatus(error.message, true);
+    }
+}
+
+function renderUsers() {
+    const rows = state.users.map((user) => {
+        const isSelf = state.me && user.id === state.me.id;
+        const isAdmin = user.role === 'admin';
+        let actions = '<span class="text-gray-300">—</span>';
+        if (!isAdmin && !isSelf) {
+            actions = user.banned
+                ? `<button data-action="unban" data-id="${escapeAttr(user.id)}"
+                           class="px-2.5 py-1 text-green-600 bg-green-50 rounded hover:bg-green-100">解封</button>`
+                : `<button data-action="ban" data-id="${escapeAttr(user.id)}"
+                           class="px-2.5 py-1 text-red-600 bg-red-50 rounded hover:bg-red-100">封禁</button>`;
+        }
+        const roleBadge = isAdmin
+            ? '<span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-600">管理员</span>'
+            : '<span class="px-2 py-0.5 rounded bg-gray-100 text-gray-500">用户</span>';
+        const statusBadge = user.banned
+            ? `<span class="px-2 py-0.5 rounded bg-red-50 text-red-600" title="${escapeAttr(user.ban_reason || '')}">已封禁</span>`
+            : '<span class="px-2 py-0.5 rounded bg-green-50 text-green-600">正常</span>';
+        return `<tr class="border-t border-gray-100 hover:bg-slate-50">
+            <td class="px-3 py-2">
+                <div class="font-medium text-gray-800">${escapeHtml(user.username)}${isSelf ? ' <span class="text-[10px] text-gray-400">（我）</span>' : ''}</div>
+                <div class="text-[10px] text-gray-400">${escapeHtml(user.id)}</div>
+            </td>
+            <td class="px-3 py-2">${roleBadge}</td>
+            <td class="px-3 py-2">${statusBadge}</td>
+            <td class="px-3 py-2 text-right">${Number(user.document_count || 0)}</td>
+            <td class="px-3 py-2 text-right">${fmtSize(user.storage_bytes)}</td>
+            <td class="px-3 py-2 text-gray-500">${fmtTime(user.last_upload)}</td>
+            <td class="px-3 py-2 text-gray-500">${fmtTime(user.created_at)}</td>
+            <td class="px-3 py-2 text-right whitespace-nowrap">${actions}</td>
+        </tr>`;
+    }).join('');
+    $('users-body').innerHTML = rows ||
+        '<tr><td colspan="8" class="px-3 py-10 text-center text-gray-400">没有匹配的账号</td></tr>';
+    $('users-summary').textContent = '共 ' + state.usersTotal + ' 个账号';
+    updatePager('users', state.usersTotal, state.usersOffset);
+}
+
+function handleUserAction(event) {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    const user = state.users.find((item) => item.id === button.dataset.id);
+    if (!user) return;
+    if (button.dataset.action === 'ban') {
+        openReasonModal({
+            title: '封禁账号：' + user.username,
+            desc: '封禁后该账号立即无法登录，已登录的会话在下一次请求时失效；文献不会被删除。',
+            label: '封禁原因（必填）',
+            confirmText: '确认封禁',
+            required: true,
+            onSubmit: async ({ reason }) => {
+                await api('/api/admin/users/' + encodeURIComponent(user.id) + '/ban', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason }),
+                });
+                closeReasonModal();
+                toast('已封禁账号 ' + user.username);
+                await Promise.all([loadUsers(false), loadStats(), loadOwnerOptions()]);
+            },
+        });
+    } else if (button.dataset.action === 'unban') {
+        openReasonModal({
+            title: '解封账号：' + user.username,
+            desc: '解封后该账号可以重新登录，原有文献不受影响。',
+            label: '解封说明（可选）',
+            confirmText: '确认解封',
+            required: false,
+            onSubmit: async ({ reason }) => {
+                await api('/api/admin/users/' + encodeURIComponent(user.id) + '/unban', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason }),
+                });
+                closeReasonModal();
+                toast('已解封账号 ' + user.username);
+                await Promise.all([loadUsers(false), loadStats(), loadOwnerOptions()]);
+            },
+        });
+    }
+}
+
+// ==================================================================== 文献
+async function loadDocuments(reset) {
+    if (reset) state.docsOffset = 0;
+    const query = $('doc-search').value.trim();
+    const owner = $('doc-owner').value;
+    setStatus('正在加载文献…');
+    try {
+        const params = new URLSearchParams({
+            limit: PAGE_SIZE, offset: state.docsOffset, q: query, user_id: owner,
+        });
+        const data = await api('/api/admin/documents?' + params.toString());
+        state.documents = data.documents || [];
+        state.docsTotal = data.total || 0;
+        renderDocuments();
+        setStatus('');
+    } catch (error) {
+        setStatus(error.message, true);
+    }
+}
+
+function indexBadge(status) {
+    const map = {
+        ready: ['已就绪', 'bg-green-50 text-green-600'],
+        pending: ['排队中', 'bg-amber-50 text-amber-600'],
+        running: ['建索引中', 'bg-blue-50 text-blue-600'],
+        error: ['失败', 'bg-red-50 text-red-600'],
+    };
+    const [label, cls] = map[status] || [status || '未知', 'bg-gray-100 text-gray-500'];
+    return `<span class="px-2 py-0.5 rounded ${cls}">${escapeHtml(label)}</span>`;
+}
+
+function renderDocuments() {
+    const rows = state.documents.map((doc) => {
+        const title = doc.display_name || doc.filename || '未命名';
+        const tags = (doc.tags || []).map((tag) =>
+            `<span class="px-1.5 py-0.5 rounded bg-slate-100 text-gray-500">${escapeHtml(tag)}</span>`).join(' ');
+        const meta = [
+            doc.category ? escapeHtml(doc.category) : '',
+            tags,
+        ].filter(Boolean).join(' ');
+        return `<tr class="border-t border-gray-100 hover:bg-slate-50">
+            <td class="px-3 py-2 max-w-[260px]">
+                <div class="font-medium text-gray-800 truncate" title="${escapeAttr(title)}">${escapeHtml(title)}</div>
+                <div class="text-[10px] text-gray-400 truncate" title="${escapeAttr(doc.filename || '')}">${escapeHtml(doc.filename || '')}</div>
+            </td>
+            <td class="px-3 py-2">
+                <div class="text-gray-700">${escapeHtml(doc.owner || '')}</div>
+                <div class="text-[10px] text-gray-400">${escapeHtml(doc.owner_id || '')}</div>
+            </td>
+            <td class="px-3 py-2 max-w-[200px]">${meta || '<span class="text-gray-300">—</span>'}</td>
+            <td class="px-3 py-2 text-gray-600">
+                ${Number(doc.page_count || 0)} ${escapeHtml(doc.unit || '页')} · ${Number(doc.chunk_count || 0)} 块
+                ${doc.ocr_pages ? `<div class="text-[10px] text-gray-400">OCR ${Number(doc.ocr_pages)} 页</div>` : ''}
+            </td>
+            <td class="px-3 py-2">${indexBadge(doc.index_status)}</td>
+            <td class="px-3 py-2 text-gray-500">${fmtTime(doc.upload_time)}</td>
+            <td class="px-3 py-2 text-right text-gray-500">${fmtSize(doc.size_bytes)}</td>
+            <td class="px-3 py-2 text-right whitespace-nowrap">
+                <button data-doc-action="grant" data-id="${escapeAttr(doc.id)}"
+                        class="px-2.5 py-1 text-primary bg-blue-50 rounded hover:bg-blue-100">核查查看</button>
+                <button data-doc-action="delete" data-id="${escapeAttr(doc.id)}"
+                        class="ml-1 px-2.5 py-1 text-rose-600 bg-rose-50 rounded hover:bg-rose-100">删除</button>
+            </td>
+        </tr>`;
+    }).join('');
+    $('docs-body').innerHTML = rows ||
+        '<tr><td colspan="8" class="px-3 py-10 text-center text-gray-400">没有匹配的文献</td></tr>';
+    $('docs-summary').textContent = '共 ' + state.docsTotal + ' 篇文献（仅元数据）';
+    updatePager('docs', state.docsTotal, state.docsOffset);
+}
+
+function handleDocAction(event) {
+    const button = event.target.closest('button[data-doc-action]');
+    if (!button) return;
+    const doc = state.documents.find((item) => item.id === button.dataset.id);
+    if (!doc) return;
+    if (button.dataset.docAction === 'grant') {
+        openGrantModal(doc);
+        return;
+    }
+    openReasonModal({
+        title: '删除文献：' + (doc.display_name || doc.filename),
+        desc: '所属用户 ' + doc.owner + '。删除会同时清理原始文件、索引和标记，且无法恢复。',
+        label: '删除原因（必填）',
+        confirmText: '确认删除',
+        required: true,
+        onSubmit: async ({ reason }) => {
+            await api('/api/admin/documents/' + encodeURIComponent(doc.owner_id) + '/'
+                + encodeURIComponent(doc.id), {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason }),
+            });
+            closeReasonModal();
+            toast('文献已删除，操作已写入审计日志');
+            await Promise.all([loadDocuments(false), loadUsers(false), loadStats()]);
+        },
+    });
+}
+
+async function loadOwnerOptions() {
+    try {
+        const data = await api('/api/admin/users?limit=200&offset=0');
+        state.allUsers = data.users || [];
+        const select = $('doc-owner');
+        const current = select.value;
+        select.innerHTML = '<option value="">全部用户</option>' + state.allUsers.map((user) =>
+            `<option value="${escapeAttr(user.id)}">${escapeHtml(user.username)}${user.banned ? '（已封禁）' : ''}</option>`
+        ).join('');
+        if (current) select.value = current;
+    } catch (error) {
+        // 用户下拉失败不影响主要功能
+    }
+}
+
+// ==================================================================== 审计
+async function loadAudit(reset) {
+    if (reset) state.auditOffset = 0;
+    const action = $('audit-action').value;
+    setStatus('正在加载审计日志…');
+    try {
+        const params = new URLSearchParams({
+            limit: PAGE_SIZE, offset: state.auditOffset, action,
+        });
+        const data = await api('/api/admin/audit?' + params.toString());
+        state.audit = data.entries || [];
+        state.auditTotal = data.total || 0;
+        renderAudit();
+        setStatus('');
+    } catch (error) {
+        setStatus(error.message, true);
+    }
+}
+
+function renderAudit() {
+    const rows = state.audit.map((entry) => {
+        const detail = entry.detail && Object.keys(entry.detail).length
+            ? JSON.stringify(entry.detail) : '';
+        const target = [entry.target_type, entry.target_name || entry.target_id]
+            .filter(Boolean).join(' · ');
+        return `<tr class="border-t border-gray-100 hover:bg-slate-50">
+            <td class="px-3 py-2 text-gray-500 whitespace-nowrap">${fmtTime(entry.ts)}</td>
+            <td class="px-3 py-2">
+                <span class="px-2 py-0.5 rounded ${actionClass(entry.action)}" title="${escapeAttr(entry.action || '')}">
+                    ${escapeHtml(actionLabel(entry.action))}
+                </span>
+            </td>
+            <td class="px-3 py-2">
+                <div class="text-gray-700">${escapeHtml(entry.actor || '—')}</div>
+                <div class="text-[10px] text-gray-400">${escapeHtml(entry.actor_id || '')}</div>
+            </td>
+            <td class="px-3 py-2 max-w-[200px]">
+                <div class="truncate" title="${escapeAttr(target)}">${escapeHtml(target || '—')}</div>
+            </td>
+            <td class="px-3 py-2 max-w-[220px]">
+                <div class="truncate" title="${escapeAttr(entry.reason || '')}">${escapeHtml(entry.reason || '—')}</div>
+            </td>
+            <td class="px-3 py-2 text-gray-500">${escapeHtml(entry.ip || '—')}</td>
+            <td class="px-3 py-2 max-w-[220px]">
+                <div class="truncate text-[10px] text-gray-400" title="${escapeAttr(detail)}">${escapeHtml(detail || '—')}</div>
+            </td>
+        </tr>`;
+    }).join('');
+    $('audit-body').innerHTML = rows ||
+        '<tr><td colspan="7" class="px-3 py-10 text-center text-gray-400">还没有审计记录</td></tr>';
+    $('audit-summary').textContent = '共 ' + state.auditTotal + ' 条记录';
+    updatePager('audit', state.auditTotal, state.auditOffset);
+}
+
+// ==================================================================== 分页
+function updatePager(kind, total, offset) {
+    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const page = Math.floor(offset / PAGE_SIZE) + 1;
+    $(kind + '-page').textContent = '第 ' + page + ' / ' + pages + ' 页';
+    $(kind + '-prev').disabled = offset <= 0;
+    $(kind + '-next').disabled = offset + PAGE_SIZE >= total;
+}
+function changePage(kind, direction) {
+    if (kind === 'users') {
+        state.usersOffset = Math.max(0, state.usersOffset + direction * PAGE_SIZE);
+        loadUsers(false);
+    } else if (kind === 'docs') {
+        state.docsOffset = Math.max(0, state.docsOffset + direction * PAGE_SIZE);
+        loadDocuments(false);
+    } else {
+        state.auditOffset = Math.max(0, state.auditOffset + direction * PAGE_SIZE);
+        loadAudit(false);
+    }
+}
+
+// ==================================================================== 通用原因弹窗
+function reasonError(message) {
+    const el = $('reason-error');
+    el.textContent = message || '';
+    el.classList.toggle('hidden', !message);
+}
+function openReasonModal(options) {
+    state.reasonHandler = options.onSubmit;
+    state.reasonRequired = options.required !== false;
+    $('reason-title').textContent = options.title;
+    $('reason-desc').textContent = options.desc || '';
+    $('reason-label').textContent = options.label || '原因';
+    $('reason-confirm').textContent = options.confirmText || '确认';
+    $('reason-input').value = '';
+    reasonError('');
+    $('reason-modal').classList.remove('hidden');
+    $('reason-modal').classList.add('flex');
+    $('reason-input').focus();
+}
+function closeReasonModal() {
+    $('reason-modal').classList.add('hidden');
+    $('reason-modal').classList.remove('flex');
+    state.reasonHandler = null;
+}
+async function submitReason() {
+    if (!state.reasonHandler) return;
+    const reason = $('reason-input').value.trim();
+    if (state.reasonRequired && reason.length < 2) {
+        reasonError('请填写至少 2 个字的说明');
+        return;
+    }
+    const button = $('reason-confirm');
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = '处理中…';
+    reasonError('');
+    try {
+        await state.reasonHandler({ reason });
+    } catch (error) {
+        reasonError(error.message || '操作失败');
+    } finally {
+        button.disabled = false;
+        button.textContent = label;
+    }
+}
+
+// ==================================================================== 查看授权弹窗
+function grantError(message) {
+    const el = $('grant-error');
+    el.textContent = message || '';
+    el.classList.toggle('hidden', !message);
+}
+function openGrantModal(doc) {
+    state.grantDoc = doc;
+    $('grant-title').textContent = '核查查看：' + (doc.display_name || doc.filename);
+    $('grant-meta').textContent = '所属用户 ' + doc.owner + ' · '
+        + Number(doc.page_count || 0) + ' ' + (doc.unit || '页')
+        + ' · ' + (doc.upload_time || '').replace('T', ' ');
+    $('grant-reason').value = '';
+    $('grant-report').value = '';
+    $('grant-result').classList.add('hidden');
+    $('grant-form').classList.remove('hidden');
+    grantError('');
+    $('grant-modal').classList.remove('hidden');
+    $('grant-modal').classList.add('flex');
+    $('grant-reason').focus();
+}
+function closeGrantModal() {
+    $('grant-modal').classList.add('hidden');
+    $('grant-modal').classList.remove('flex');
+    state.grantDoc = null;
+}
+async function submitGrant() {
+    const doc = state.grantDoc;
+    if (!doc) return;
+    const reason = $('grant-reason').value.trim();
+    if (reason.length < 2) {
+        grantError('请填写核查事由（至少 2 个字）');
+        return;
+    }
+    const reportRef = $('grant-report').value.trim();
+    const button = $('grant-submit');
+    button.disabled = true;
+    button.textContent = '签发中…';
+    grantError('');
+    try {
+        const data = await api('/api/admin/documents/' + encodeURIComponent(doc.owner_id)
+            + '/' + encodeURIComponent(doc.id) + '/view-grant', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason, report_ref: reportRef }),
+        });
+        $('grant-link').href = API_BASE + data.url;
+        $('grant-expiry').textContent = '有效期约 '
+            + Math.max(1, Math.round(Number(data.expires_in || 0) / 60))
+            + ' 分钟；每次打开这个链接都会新增一条「查看原始文件」审计记录。';
+        $('grant-form').classList.add('hidden');
+        $('grant-result').classList.remove('hidden');
+        toast('短期查看授权已签发');
+        loadStats();
+    } catch (error) {
+        grantError(error.message || '签发失败');
+    } finally {
+        button.disabled = false;
+        button.textContent = '签发授权';
+    }
+}
+function copyGrantLink() {
+    const href = $('grant-link').href;
+    if (!href) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(href)
+            .then(() => toast('授权链接已复制'))
+            .catch(() => toast('复制失败，请右键链接手动复制', 'error'));
+    } else {
+        toast('当前浏览器不支持自动复制，请右键链接手动复制', 'error');
+    }
+}
+
+// ==================================================================== 事件绑定
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-tab]').forEach((button) => {
+        button.addEventListener('click', () => setTab(button.dataset.tab));
+    });
+
+    $('logout-btn').addEventListener('click', logout);
+
+    $('user-search-btn').addEventListener('click', () => loadUsers(true));
+    $('user-search').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') loadUsers(true);
+    });
+    $('user-refresh-btn').addEventListener('click', () => {
+        loadUsers(false); loadStats(); loadOwnerOptions();
+    });
+    $('users-prev').addEventListener('click', () => changePage('users', -1));
+    $('users-next').addEventListener('click', () => changePage('users', 1));
+    $('users-body').addEventListener('click', handleUserAction);
+
+    $('doc-search-btn').addEventListener('click', () => loadDocuments(true));
+    $('doc-search').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') loadDocuments(true);
+    });
+    $('doc-owner').addEventListener('change', () => loadDocuments(true));
+    $('doc-refresh-btn').addEventListener('click', () => loadDocuments(false));
+    $('docs-prev').addEventListener('click', () => changePage('docs', -1));
+    $('docs-next').addEventListener('click', () => changePage('docs', 1));
+    $('docs-body').addEventListener('click', handleDocAction);
+
+    $('audit-action').addEventListener('change', () => loadAudit(true));
+    $('audit-refresh-btn').addEventListener('click', () => loadAudit(false));
+    $('audit-prev').addEventListener('click', () => changePage('audit', -1));
+    $('audit-next').addEventListener('click', () => changePage('audit', 1));
+
+    $('reason-cancel').addEventListener('click', closeReasonModal);
+    $('reason-confirm').addEventListener('click', submitReason);
+    $('reason-modal').addEventListener('click', (event) => {
+        if (event.target === $('reason-modal')) closeReasonModal();
+    });
+
+    $('grant-cancel').addEventListener('click', closeGrantModal);
+    $('grant-close').addEventListener('click', closeGrantModal);
+    $('grant-submit').addEventListener('click', submitGrant);
+    $('grant-copy').addEventListener('click', copyGrantLink);
+    $('grant-modal').addEventListener('click', (event) => {
+        if (event.target === $('grant-modal')) closeGrantModal();
+    });
+
+    boot();
+});
+</script>
+</body>
+</html>

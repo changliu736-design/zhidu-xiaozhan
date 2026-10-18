@@ -1,0 +1,3001 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智读小站 - AI文献阅读助手</title>
+    <link rel="icon" type="image/svg+xml" href="vendor/favicon.svg">
+    <!-- 全部使用项目本地资源，断网/校园网不稳也能正常打开 -->
+    <script src="vendor/js/tailwind.js"></script>
+    <link href="vendor/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#1e40af',
+                        secondary: '#3b82f6',
+                        accent: '#60a5fa',
+                        neutral: '#f1f5f9',
+                        'neutral-dark': '#94a3b8',
+                    },
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 1s linear infinite; }
+        .transition-all-300 { transition: all 0.3s ease; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: #f1f5f9; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
+        /* 引用页码按钮：点一下跳到原文对应页 */
+        .cite-chip {
+            display: inline-block; margin: 0 2px; padding: 0 6px;
+            background: #dbeafe; color: #1e40af; border-radius: 9999px;
+            font-size: 11px; font-weight: 600; cursor: pointer;
+            border: 1px solid #bfdbfe; line-height: 18px; vertical-align: baseline;
+        }
+        .cite-chip:hover { background: #1e40af; color: #fff; }
+        .cursor-blink::after {
+            content: '▌'; animation: blink 1s step-start infinite; color: #3b82f6;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+        .doc-active { background: #eff6ff; box-shadow: inset 3px 0 0 #1e40af; }
+        /* 正文预览里被引用命中的段落 */
+        .block-active { background: #dbeafe; box-shadow: inset 3px 0 0 #1e40af; }
+
+        /* ============ 登录页动态背景（蓝白 · 光晕 + 丝带） ============
+           性能取舍：全部只动 transform / opacity，交给 GPU 合成；
+           柔边用径向渐变而不是 filter:blur，避免每帧重新模糊整屏。
+           运动设计：不用 alternate 的对称往返（那样像机械呼吸，很生硬），
+           改成多节点闭合路径 + 明暗呼吸；每个元素一套独立关键帧，
+           配上不同周期、负延迟和时间曲线，最后再由 JS 随机化一次。 */
+        #auth-overlay { background: #eff6ff; }
+
+        .aurora { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+
+        /* 底层：流动的蓝白渐变 */
+        .aurora-base {
+            position: absolute; inset: -30%;
+            background: linear-gradient(135deg,
+                #eff6ff 0%, #bfdbfe 26%, #eff6ff 50%, #dbeafe 74%, #ffffff 100%);
+            animation: auroraDrift 26s cubic-bezier(0.42, 0, 0.58, 1) infinite;
+        }
+        @keyframes auroraDrift {
+            0%   { transform: translate3d(-6%, -3%, 0) rotate(0deg)   scale(1.05); }
+            28%  { transform: translate3d(5%, 5%, 0)   rotate(3.5deg) scale(1.17); }
+            55%  { transform: translate3d(8%, -5%, 0)  rotate(-1deg)  scale(1.08); }
+            78%  { transform: translate3d(-3%, 6%, 0)  rotate(2deg)   scale(1.14); }
+            100% { transform: translate3d(-6%, -3%, 0) rotate(0deg)   scale(1.05); }
+        }
+
+        /* 旋转光带：转圈的同时缩放并明暗呼吸，避免匀速转的呆板 */
+        .sweep {
+            position: absolute; inset: -45%;
+            background: conic-gradient(from 0deg,
+                rgba(255, 255, 255, 0) 0deg,
+                rgba(96, 165, 250, 0.24) 60deg,
+                rgba(255, 255, 255, 0) 150deg,
+                rgba(147, 197, 253, 0.20) 250deg,
+                rgba(255, 255, 255, 0) 360deg);
+            animation: sweepSpin 30s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+        }
+        @keyframes sweepSpin {
+            0%   { transform: rotate(0deg)   scale(1);    opacity: 0.85; }
+            35%  { transform: rotate(130deg) scale(1.14); opacity: 1; }
+            68%  { transform: rotate(245deg) scale(0.96); opacity: 0.68; }
+            100% { transform: rotate(360deg) scale(1);    opacity: 0.85; }
+        }
+
+        /* 漂浮光晕：四个光团各走各的路径，边走边呼吸 */
+        .orb { position: absolute; border-radius: 50%; }
+        .orb-1 {
+            width: 46rem; height: 46rem; left: -12rem; top: -14rem;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.34), rgba(59, 130, 246, 0) 62%);
+            animation: orbDriftA 15s cubic-bezier(0.45, 0, 0.55, 1) -3s infinite;
+        }
+        .orb-2 {
+            width: 38rem; height: 38rem; right: -10rem; top: 6%;
+            background: radial-gradient(circle, rgba(34, 211, 238, 0.30), rgba(34, 211, 238, 0) 62%);
+            animation: orbDriftB 19s cubic-bezier(0.37, 0, 0.63, 1) -8.5s infinite;
+        }
+        .orb-3 {
+            width: 42rem; height: 42rem; left: 20%; bottom: -18rem;
+            background: radial-gradient(circle, rgba(129, 140, 248, 0.28), rgba(129, 140, 248, 0) 62%);
+            animation: orbDriftC 17s cubic-bezier(0.5, 0, 0.5, 1) -12s infinite;
+        }
+        .orb-4 {
+            width: 26rem; height: 26rem; right: 14%; bottom: 4%;
+            background: radial-gradient(circle, rgba(96, 165, 250, 0.24), rgba(96, 165, 250, 0) 62%);
+            animation: orbDriftD 13s cubic-bezier(0.42, 0, 0.58, 1) -5.5s infinite;
+        }
+        @keyframes orbDriftA {
+            0%   { transform: translate3d(0, 0, 0) scale(1);        opacity: 0.9; }
+            24%  { transform: translate3d(10%, 8%, 0) scale(1.2);   opacity: 1; }
+            51%  { transform: translate3d(2%, 15%, 0) scale(1.02);  opacity: 0.62; }
+            76%  { transform: translate3d(-7%, 6%, 0) scale(1.24);  opacity: 0.95; }
+            100% { transform: translate3d(0, 0, 0) scale(1);        opacity: 0.9; }
+        }
+        @keyframes orbDriftB {
+            0%   { transform: translate3d(0, 0, 0) scale(1.08);      opacity: 0.85; }
+            27%  { transform: translate3d(-12%, 10%, 0) scale(0.92); opacity: 1; }
+            54%  { transform: translate3d(-4%, -8%, 0) scale(1.22);  opacity: 0.58; }
+            79%  { transform: translate3d(9%, 4%, 0) scale(1.04);    opacity: 0.95; }
+            100% { transform: translate3d(0, 0, 0) scale(1.08);      opacity: 0.85; }
+        }
+        @keyframes orbDriftC {
+            0%   { transform: translate3d(0, 0, 0) scale(1);         opacity: 0.8; }
+            30%  { transform: translate3d(9%, -10%, 0) scale(1.26);  opacity: 1; }
+            58%  { transform: translate3d(-6%, -3%, 0) scale(0.94);  opacity: 0.58; }
+            82%  { transform: translate3d(5%, 6%, 0) scale(1.16);    opacity: 0.9; }
+            100% { transform: translate3d(0, 0, 0) scale(1);         opacity: 0.8; }
+        }
+        @keyframes orbDriftD {
+            0%   { transform: translate3d(0, 0, 0) scale(0.88);      opacity: 0.7; }
+            33%  { transform: translate3d(-10%, -9%, 0) scale(1.32); opacity: 1; }
+            66%  { transform: translate3d(7%, -13%, 0) scale(1.0);   opacity: 0.6; }
+            100% { transform: translate3d(0, 0, 0) scale(0.88);      opacity: 0.7; }
+        }
+
+        /* 丝带：三条各走各的路径，周期错开，透明度轻微起伏 */
+        .ribbons { position: absolute; inset: 0; width: 100%; height: 100%; }
+        .ribbon { transform-origin: 50% 50%; }
+        .ribbon-1 { animation: ribbonFlowA 18s cubic-bezier(0.45, 0, 0.55, 1) -2s infinite; }
+        .ribbon-2 { animation: ribbonFlowB 23s cubic-bezier(0.37, 0, 0.63, 1) -11s infinite; }
+        .ribbon-3 { animation: ribbonFlowC 20s cubic-bezier(0.5, 0, 0.5, 1) -7s infinite; }
+        @keyframes ribbonFlowA {
+            0%   { transform: translate3d(-7%, -3%, 0) rotate(-3.5deg) scale(1.02); opacity: 1; }
+            26%  { transform: translate3d(4%, 5%, 0)   rotate(1.5deg)  scale(1.09); opacity: 0.7; }
+            53%  { transform: translate3d(8%, -4%, 0)  rotate(4deg)    scale(1.0);  opacity: 1; }
+            79%  { transform: translate3d(-3%, 6%, 0)  rotate(-1deg)   scale(1.06); opacity: 0.8; }
+            100% { transform: translate3d(-7%, -3%, 0) rotate(-3.5deg) scale(1.02); opacity: 1; }
+        }
+        @keyframes ribbonFlowB {
+            0%   { transform: translate3d(6%, 4%, 0)   rotate(3deg)    scale(1.04); opacity: 0.85; }
+            31%  { transform: translate3d(-5%, -5%, 0) rotate(-2.5deg) scale(1.1);  opacity: 1; }
+            62%  { transform: translate3d(-8%, 5%, 0)  rotate(3.5deg)  scale(0.98); opacity: 0.65; }
+            100% { transform: translate3d(6%, 4%, 0)   rotate(3deg)    scale(1.04); opacity: 0.85; }
+        }
+        @keyframes ribbonFlowC {
+            0%   { transform: translate3d(0, 5%, 0)    rotate(2deg)    scale(1.06); opacity: 0.8; }
+            29%  { transform: translate3d(-6%, -4%, 0) rotate(-3deg)   scale(0.99); opacity: 1; }
+            57%  { transform: translate3d(7%, 3%, 0)   rotate(1deg)    scale(1.11); opacity: 0.68; }
+            83%  { transform: translate3d(3%, -6%, 0)  rotate(3.5deg)  scale(1.03); opacity: 0.95; }
+            100% { transform: translate3d(0, 5%, 0)    rotate(2deg)    scale(1.06); opacity: 0.8; }
+        }
+
+        /* 卡片周围的高光，让登录框从背景里浮起来 */
+        .aurora::after {
+            content: ''; position: absolute; inset: 0;
+            background: radial-gradient(ellipse 62% 58% at 50% 47%,
+                rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0) 70%);
+        }
+
+        /* 系统开启「减少动态效果」时全部静止 */
+        @media (prefers-reduced-motion: reduce) {
+            .aurora-base, .sweep, .orb, .ribbon { animation: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
+
+<!-- ==================== 登录 / 注册 ==================== -->
+<div id="auth-overlay" class="fixed inset-0 z-[100] flex items-center justify-center hidden overflow-hidden">
+
+    <!-- 动态背景：蓝白渐变 + 漂浮光晕 + 流动丝带（纯本地，无外部依赖） -->
+    <div class="aurora" aria-hidden="true">
+        <div class="aurora-base"></div>
+        <div class="sweep"></div>
+        <span class="orb orb-1"></span>
+        <span class="orb orb-2"></span>
+        <span class="orb orb-3"></span>
+        <span class="orb orb-4"></span>
+
+        <svg class="ribbons" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+            <defs>
+                <linearGradient id="ribbonBlue" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stop-color="#3b82f6" stop-opacity="0"></stop>
+                    <stop offset="32%" stop-color="#2563eb" stop-opacity="0.85"></stop>
+                    <stop offset="68%" stop-color="#60a5fa" stop-opacity="0.75"></stop>
+                    <stop offset="100%" stop-color="#93c5fd" stop-opacity="0"></stop>
+                </linearGradient>
+                <linearGradient id="ribbonCyan" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stop-color="#22d3ee" stop-opacity="0"></stop>
+                    <stop offset="40%" stop-color="#38bdf8" stop-opacity="0.8"></stop>
+                    <stop offset="78%" stop-color="#818cf8" stop-opacity="0.6"></stop>
+                    <stop offset="100%" stop-color="#a5b4fc" stop-opacity="0"></stop>
+                </linearGradient>
+            </defs>
+
+            <!-- 每条丝带画两遍：粗的一层当柔光，细的一层当本体。走向斜向交叉，避免像横条纹 -->
+            <g class="ribbon ribbon-1" opacity="0.34">
+                <path d="M-280,660 C160,430 520,540 880,300 S1380,160 1780,40"
+                      fill="none" stroke="url(#ribbonBlue)" stroke-width="220" stroke-linecap="round" opacity="0.22"></path>
+                <path d="M-280,660 C160,430 520,540 880,300 S1380,160 1780,40"
+                      fill="none" stroke="url(#ribbonBlue)" stroke-width="72" stroke-linecap="round"></path>
+            </g>
+            <g class="ribbon ribbon-2" opacity="0.28">
+                <path d="M-280,140 C200,330 520,90 900,300 S1400,470 1780,400"
+                      fill="none" stroke="url(#ribbonCyan)" stroke-width="180" stroke-linecap="round" opacity="0.22"></path>
+                <path d="M-280,140 C200,330 520,90 900,300 S1400,470 1780,400"
+                      fill="none" stroke="url(#ribbonCyan)" stroke-width="58" stroke-linecap="round"></path>
+            </g>
+            <g class="ribbon ribbon-3" opacity="0.22">
+                <path d="M-280,900 C240,780 620,930 1020,700 S1480,540 1780,620"
+                      fill="none" stroke="url(#ribbonBlue)" stroke-width="150" stroke-linecap="round" opacity="0.22"></path>
+                <path d="M-280,900 C240,780 620,930 1020,700 S1480,540 1780,620"
+                      fill="none" stroke="url(#ribbonBlue)" stroke-width="48" stroke-linecap="round"></path>
+            </g>
+        </svg>
+    </div>
+
+    <div class="relative bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl ring-1 ring-white/70 w-full max-w-sm p-8">
+        <div class="flex flex-col items-center mb-6">
+            <div class="h-12 w-12 bg-primary rounded-lg flex items-center justify-center mb-2">
+                <span class="text-white font-bold text-2xl">智</span>
+            </div>
+            <h1 class="text-lg font-bold text-primary">智读小站</h1>
+            <p class="text-xs text-gray-500 mt-1">AI 文献阅读助手 · 答案可溯源</p>
+        </div>
+
+        <div class="flex mb-4 bg-neutral rounded-lg p-1">
+            <button id="mode-login" class="flex-1 py-1.5 text-sm rounded-md bg-white shadow-sm font-medium text-primary">登录</button>
+            <button id="mode-register" class="flex-1 py-1.5 text-sm rounded-md text-gray-500">注册</button>
+        </div>
+
+        <div class="space-y-3">
+            <input id="auth-username" type="text" placeholder="用户名"
+                   class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary">
+            <input id="auth-password" type="password" placeholder="密码（至少 6 位）"
+                   class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary">
+        </div>
+
+        <div id="auth-error" class="text-xs text-red-600 mt-3 hidden"></div>
+
+        <button id="auth-submit"
+                class="mt-5 w-full py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90">
+            登录
+        </button>
+    </div>
+</div>
+
+<!-- ==================== 修改密码弹窗 ==================== -->
+<div id="pwd-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] hidden">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-base font-medium">修改密码</h3>
+            <button id="pwd-close" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button>
+        </div>
+        <div class="space-y-3">
+            <input id="pwd-old" type="password" placeholder="原密码"
+                   class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary">
+            <input id="pwd-new" type="password" placeholder="新密码（至少 6 位）"
+                   class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary">
+            <input id="pwd-confirm" type="password" placeholder="再输一次新密码"
+                   class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary">
+        </div>
+        <div id="pwd-error" class="text-xs text-red-600 mt-3 hidden"></div>
+        <div class="flex gap-2 mt-5">
+            <button id="pwd-cancel" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200">取消</button>
+            <button id="pwd-submit" class="flex-1 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary/90">确定修改</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== 编辑文献信息弹窗 ==================== -->
+<div id="doc-meta-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] hidden">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-base font-medium">编辑文献信息</h3>
+            <button id="meta-close" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button>
+        </div>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">标题</label>
+                <input id="meta-title" maxlength="120" placeholder="显示名称"
+                       class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">分类</label>
+                <input id="meta-category" maxlength="40" list="category-options" placeholder="如：机器学习 / 待读"
+                       class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary">
+                <datalist id="category-options"></datalist>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">标签</label>
+                <input id="meta-tags" maxlength="200" placeholder="用逗号或空格分隔，如：Transformer 综述"
+                       class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary">
+            </div>
+        </div>
+        <div id="meta-error" class="text-xs text-red-600 mt-3 hidden"></div>
+        <div class="flex gap-2 mt-5">
+            <button id="meta-cancel" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200">取消</button>
+            <button id="meta-save" class="flex-1 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary/90">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== 全库问答 / 综述弹窗 ==================== -->
+<div id="library-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[120] hidden p-4">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl h-[82vh] flex flex-col overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between gap-3 flex-shrink-0">
+            <div class="min-w-0">
+                <h3 class="text-base font-medium text-gray-800"><i class="fa fa-book text-primary mr-1.5"></i>文献库研究助手</h3>
+                <p id="lib-scope-hint" class="text-[11px] text-gray-400 mt-0.5">在全库范围内检索、对比与综述</p>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <select id="lib-scope" class="text-[11px] border border-gray-300 rounded-md px-2 py-1 text-gray-600 focus:outline-none">
+                    <option value="all">全部已索引文献</option>
+                    <option value="selected">仅选中文献（0 篇）</option>
+                </select>
+                <button id="library-modal-close" class="text-gray-400 hover:text-gray-600">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+        </div>
+        <div class="flex border-b border-gray-200 flex-shrink-0">
+            <button id="lib-tab-ask" class="flex-1 py-2.5 text-sm font-medium text-primary border-b-2 border-primary">
+                <i class="fa fa-comments-o mr-1"></i>全库问答
+            </button>
+            <button id="lib-tab-review" class="flex-1 py-2.5 text-sm font-medium text-gray-500 hover:text-primary">
+                <i class="fa fa-columns mr-1"></i>对比 / 综述
+            </button>
+        </div>
+
+        <div id="lib-panel-ask" class="flex-1 flex flex-col min-h-0">
+            <div class="px-4 pt-2 flex justify-end flex-shrink-0">
+                <button id="lib-ask-clear" class="text-[11px] text-gray-400 hover:text-gray-600">清空对话</button>
+            </div>
+            <div id="lib-ask-messages" class="flex-1 overflow-y-auto scrollbar-thin px-4 pb-4 space-y-3">
+                <div id="lib-ask-empty" class="text-center text-gray-400 text-xs py-10 leading-relaxed">
+                    <i class="fa fa-book-open text-2xl mb-2 block"></i>
+                    试着问：「我的文献库里关于 Transformer 的研究有什么进展？」<br>
+                    回答会综合多篇文献，并标注每一句的来源。
+                </div>
+            </div>
+            <div id="lib-ask-status" class="px-4 pb-1 text-[11px] text-gray-400 hidden"></div>
+            <div class="border-t border-gray-200 p-3 flex gap-2 flex-shrink-0">
+                <input id="lib-ask-input" maxlength="1000" placeholder="向整个文献库提问，回车发送"
+                       class="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary">
+                <button id="lib-ask-send" class="px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary/90 disabled:opacity-50">
+                    发送
+                </button>
+            </div>
+        </div>
+
+        <div id="lib-panel-review" class="flex-1 flex flex-col min-h-0 hidden">
+            <div class="p-3 border-b border-gray-100 flex gap-2 flex-wrap items-center flex-shrink-0">
+                <div class="flex rounded-lg border border-gray-300 overflow-hidden">
+                    <button data-mode="review" class="lib-mode-btn px-3 py-1.5 text-xs bg-primary text-white">综述</button>
+                    <button data-mode="compare" class="lib-mode-btn px-3 py-1.5 text-xs text-gray-600">对比</button>
+                </div>
+                <input id="lib-review-topic" maxlength="300" placeholder="主题，如：局部放电检测（留空则综述全部）"
+                       class="flex-1 min-w-[180px] text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary">
+                <button id="lib-review-run" class="px-4 py-1.5 bg-primary text-white rounded-lg text-sm hover:bg-primary/90 disabled:opacity-50">
+                    生成
+                </button>
+            </div>
+            <div id="lib-review-status" class="px-4 pt-2 text-[11px] text-gray-400 hidden"></div>
+            <div id="lib-review-output" class="flex-1 overflow-y-auto scrollbar-thin p-4">
+                <div class="text-center text-gray-400 text-xs py-10 leading-relaxed">
+                    选择「综述」或「对比」，填一个关注点，<br>
+                    从文献库里提炼共同结论、方法差异和分歧。
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== 顶部 ==================== -->
+<header class="bg-white shadow-sm border-b border-gray-200 flex-shrink-0">
+    <div class="px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="h-10 w-10 bg-primary rounded-lg flex items-center justify-center">
+                <span class="text-white font-bold text-xl">智</span>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-primary leading-tight">智读小站</h1>
+                <p class="text-xs text-gray-400 leading-tight">答案带页码出处 · 点击可跳原文</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <div id="engine-badge" class="hidden md:flex items-center text-xs text-gray-500 space-x-2"></div>
+            <a id="admin-link" href="admin.html"
+               class="hidden text-xs px-3 py-1.5 bg-blue-50 text-primary rounded-md hover:bg-blue-100">
+                <i class="fa fa-shield mr-1"></i>管理后台
+            </a>
+            <button id="toggle-pdf" class="text-xs px-3 py-1.5 bg-neutral text-gray-600 rounded-md hover:bg-gray-200">
+                <i class="fa fa-file-pdf-o mr-1"></i>原文预览
+            </button>
+            <div class="flex items-center space-x-2 pl-3 border-l border-gray-200">
+                <i class="fa fa-user-circle-o text-gray-400"></i>
+                <span id="current-user" class="text-sm text-gray-700"></span>
+                <button id="change-pwd-btn" class="text-xs text-gray-400 hover:text-primary">改密码</button>
+                <button id="logout-btn" class="text-xs text-gray-400 hover:text-red-500">退出</button>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- ==================== 主体 ==================== -->
+<main class="flex-1 flex flex-col md:flex-row overflow-hidden">
+
+    <!-- 左侧：文献 -->
+    <aside class="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+        <div class="p-3 border-b border-gray-200">
+            <div id="upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-primary transition-all-300">
+                <i class="fa fa-cloud-upload text-2xl text-gray-400 mb-1"></i>
+                <p class="text-xs text-gray-600">点击或拖拽文件到此处</p>
+                <p class="text-[11px] text-gray-400 mt-0.5">支持 PDF / Word / Markdown / 纯文本</p>
+                <input type="file" id="file-input" class="hidden" accept=".pdf,.docx,.md,.markdown,.txt">
+            </div>
+        </div>
+        <div class="p-3 border-b border-gray-200">
+            <div class="relative">
+                <input type="text" id="library-query" placeholder="跨文献检索，如：Transformer"
+                       class="w-full text-xs border border-gray-300 rounded-lg py-1.5 pl-2 pr-8 focus:outline-none focus:ring-1 focus:ring-primary">
+                <button id="library-search-btn" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary">
+                    <i class="fa fa-search text-xs"></i>
+                </button>
+            </div>
+            <div id="library-status" class="text-[11px] text-gray-400 mt-1 hidden"></div>
+            <ul id="library-results" class="mt-2 space-y-1 max-h-56 overflow-y-auto scrollbar-thin hidden"></ul>
+            <button id="library-assistant-btn"
+                    class="mt-2 w-full text-[11px] py-1.5 bg-blue-50 text-primary rounded-lg hover:bg-blue-100 transition-all-300">
+                <i class="fa fa-book mr-1"></i>全库问答 / 对比综述
+            </button>
+        </div>
+        <div class="p-3 border-b border-gray-200 space-y-1.5">
+            <div class="relative">
+                <i class="fa fa-filter absolute left-2 top-1/2 -translate-y-1/2 text-gray-300 text-xs"></i>
+                <input type="text" id="doc-filter" placeholder="按标题筛选…"
+                       class="w-full text-xs border border-gray-300 rounded-lg py-1.5 pl-7 pr-7 focus:outline-none focus:ring-1 focus:ring-primary">
+                <button id="doc-filter-clear" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 hidden">
+                    <i class="fa fa-times-circle text-xs"></i>
+                </button>
+            </div>
+            <div class="flex items-center gap-1.5">
+                <select id="category-filter" class="flex-1 min-w-0 text-[11px] border border-gray-300 rounded px-1.5 py-1 text-gray-600 focus:outline-none">
+                    <option value="">全部分类</option>
+                </select>
+                <select id="tag-filter" class="flex-1 min-w-0 text-[11px] border border-gray-300 rounded px-1.5 py-1 text-gray-600 focus:outline-none">
+                    <option value="">全部标签</option>
+                </select>
+            </div>
+        </div>
+        <div class="flex-1 overflow-y-auto scrollbar-thin">
+            <div class="p-3">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-xs font-medium text-gray-500 flex items-center">
+                        <i class="fa fa-file-text-o mr-1.5"></i>我的文献
+                        <span id="doc-count" class="ml-1 font-normal text-gray-400"></span>
+                    </h2>
+                    <button id="manage-toggle" class="text-[11px] text-primary hover:underline">管理</button>
+                </div>
+                <div id="batch-bar" class="hidden flex mb-2 px-2 py-1.5 bg-neutral rounded-md text-[11px] items-center justify-between">
+                    <label class="flex items-center cursor-pointer text-gray-500">
+                        <input type="checkbox" id="batch-all" class="mr-1">全选
+                    </label>
+                    <span id="batch-count" class="text-gray-500">已选 0 篇</span>
+                    <div class="flex items-center gap-2">
+                        <button id="batch-exit" class="text-gray-400 hover:text-gray-600">取消</button>
+                        <button id="batch-delete" disabled class="text-red-500 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed">删除</button>
+                    </div>
+                </div>
+                <ul id="document-list" class="space-y-1"></ul>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 中间：AI 功能区 -->
+    <section class="flex-1 flex flex-col bg-white min-w-0">
+        <div class="flex border-b border-gray-200 flex-shrink-0">
+            <button data-tab="summary" class="tab-btn flex-1 py-3 text-sm font-medium text-primary border-b-2 border-primary">
+                <i class="fa fa-file-text-o mr-1"></i> 智能摘要
+            </button>
+            <button data-tab="qa" class="tab-btn flex-1 py-3 text-sm font-medium text-gray-500 hover:text-primary">
+                <i class="fa fa-comments-o mr-1"></i> 溯源问答
+            </button>
+            <button data-tab="translate" class="tab-btn flex-1 py-3 text-sm font-medium text-gray-500 hover:text-primary">
+                <i class="fa fa-language mr-1"></i> 精准翻译
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto scrollbar-thin p-5">
+            <!-- 摘要 -->
+            <div id="panel-summary">
+                <div class="flex justify-between items-center mb-4 gap-2">
+                    <h3 class="text-sm font-medium">文献摘要</h3>
+                    <div class="flex items-center gap-1.5">
+                        <button id="summary-export-docx" disabled title="导出当前摘要为 Word"
+                                class="export-btn text-xs px-2 py-1 bg-white border border-gray-300 text-gray-600 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i class="fa fa-file-word-o mr-1"></i>Word
+                        </button>
+                        <button id="summary-export-md" disabled title="导出当前摘要为 Markdown"
+                                class="export-btn text-xs px-2 py-1 bg-white border border-gray-300 text-gray-600 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i class="fa fa-file-text-o mr-1"></i>MD
+                        </button>
+                        <button id="generate-summary" class="text-xs px-3 py-1 bg-primary text-white rounded hover:bg-primary/90 flex items-center">
+                            <i class="fa fa-refresh mr-1"></i> 生成摘要
+                        </button>
+                    </div>
+                </div>
+                <p id="summary-export-hint" class="text-[11px] text-gray-400 mb-2 hidden"></p>
+                <div id="summary-content" class="space-y-3"></div>
+            </div>
+
+            <!-- 问答 -->
+            <div id="panel-qa" class="hidden flex-col h-full">
+                <div class="flex justify-between items-center mb-4 gap-2">
+                    <h3 class="text-sm font-medium">基于文献内容提问</h3>
+                    <div class="flex items-center gap-1.5">
+                        <button id="qa-export-docx" disabled title="导出当前问答记录为 Word"
+                                class="export-btn text-xs px-2 py-1 bg-white border border-gray-300 text-gray-600 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i class="fa fa-file-word-o mr-1"></i>Word
+                        </button>
+                        <button id="qa-export-md" disabled title="导出当前问答记录为 Markdown"
+                                class="export-btn text-xs px-2 py-1 bg-white border border-gray-300 text-gray-600 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i class="fa fa-file-text-o mr-1"></i>MD
+                        </button>
+                        <button id="clear-history" class="text-xs px-3 py-1 bg-gray-200 text-gray-600 rounded hover:bg-gray-300">清空</button>
+                    </div>
+                </div>
+                <p id="qa-export-hint" class="text-[11px] text-gray-400 mb-2 hidden"></p>
+                <div id="qa-messages" class="space-y-4 mb-4"></div>
+                <div class="relative">
+                    <input type="text" id="qa-input" placeholder="提问，或输入：标记第 3 页第 1 段 / 把第 3 页第 1 段改成…"
+                           class="w-full text-sm border border-gray-300 rounded-lg py-2 pl-3 pr-10 focus:outline-none focus:ring-1 focus:ring-primary">
+                    <button id="qa-send" class="absolute right-2 top-1/2 -translate-y-1/2 text-primary hover:text-primary/80">
+                        <i class="fa fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 翻译 -->
+            <div id="panel-translate" class="hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-sm font-medium">文本翻译</h3>
+                    <select id="lang-select" class="text-xs border border-gray-300 rounded px-2 py-1">
+                        <option value="en-zh">英文 → 中文</option>
+                        <option value="zh-en">中文 → 英文</option>
+                        <option value="en-ja">英文 → 日文</option>
+                        <option value="en-ko">英文 → 韩文</option>
+                    </select>
+                </div>
+                <div id="translation-history" class="space-y-4 mb-4"></div>
+                <textarea id="translate-input" rows="3" placeholder="输入需要翻译的术语或段落..."
+                          class="w-full text-sm border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-primary"></textarea>
+                <button id="translate-btn" class="mt-2 w-full text-xs py-1.5 bg-primary text-white rounded hover:bg-primary/90">翻译</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 右侧：原文预览（浏览器原生 PDF 阅读器） -->
+    <section id="pdf-panel" class="hidden md:flex flex-col w-full md:w-[38%] border-l border-gray-200 bg-gray-100 flex-shrink-0">
+        <div class="flex items-center justify-between px-3 py-2 bg-white border-b border-gray-200 gap-2">
+            <span class="text-xs text-gray-500 truncate" id="pdf-title">原文预览</span>
+            <span class="text-xs text-gray-400 truncate" id="pdf-page-hint">点击答案里的出处可跳转</span>
+            <button id="import-highlights" title="导入在 PDF 阅读器里手动高亮过的文件"
+                    class="text-[11px] px-2 py-0.5 bg-white border border-amber-500 text-amber-700 rounded hover:bg-amber-50 whitespace-nowrap flex-shrink-0 hidden">
+                <i class="fa fa-upload mr-1"></i>导入高亮
+            </button>
+            <input type="file" id="import-highlights-input" accept=".pdf" class="hidden">
+        </div>
+        <div id="page-nav" class="hidden flex items-center gap-1.5 px-3 py-1 bg-white border-b border-gray-100 text-[11px] text-gray-500 flex-shrink-0">
+            <button id="page-prev" title="上一页" class="px-1.5 py-0.5 rounded hover:bg-neutral disabled:opacity-30">
+                <i class="fa fa-chevron-left"></i>
+            </button>
+            <span>第
+                <input id="page-input" type="number" min="1" value="1"
+                       class="w-10 text-center border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary">
+                / <span id="page-total">?</span> <span id="page-unit">页</span>
+            </span>
+            <button id="page-next" title="下一页" class="px-1.5 py-0.5 rounded hover:bg-neutral disabled:opacity-30">
+                <i class="fa fa-chevron-right"></i>
+            </button>
+            <span id="progress-label" class="ml-auto text-gray-400">已读 0%</span>
+        </div>
+        <div id="marks-bar" class="hidden flex-shrink-0 bg-amber-50 border-b border-amber-200 px-3 py-2">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-[11px] font-medium text-amber-800">
+                    <i class="fa fa-bookmark mr-1"></i>标记 / 修改 <span id="marks-count">0</span>
+                </span>
+                <button id="export-marks" class="text-[11px] px-2 py-0.5 bg-amber-600 text-white rounded hover:bg-amber-700">
+                    <i class="fa fa-file-word-o mr-1"></i>导出 Word
+                </button>
+            </div>
+            <div id="marks-list" class="max-h-24 overflow-y-auto scrollbar-thin space-y-1"></div>
+        </div>
+        <div class="flex-1 relative">
+            <div id="pdf-empty" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                <i class="fa fa-file-text-o text-4xl mb-2"></i>
+                <p class="text-sm">选择一篇文献后可在这里预览</p>
+            </div>
+            <iframe id="pdf-frame" class="w-full h-full hidden" title="原文预览"></iframe>
+            <div id="text-view" class="w-full h-full hidden overflow-y-auto scrollbar-thin p-3 text-xs leading-relaxed text-gray-700"></div>
+        </div>
+    </section>
+</main>
+
+<script>
+// ==================================================================== 基础
+const API_BASE = (location.protocol === 'file:') ? 'http://127.0.0.1:5000' : '';
+const TOKEN_KEY = 'zd_token';
+
+let currentDocumentId = null;
+let currentFilename = '';
+let currentSourceType = 'pdf';   // pdf / text / docx
+let currentUnit = '页';          // PDF 是"页"，txt/md/docx 是"段"
+let hasIndex = false;
+let authMode = 'login';
+let pollTimer = null;
+let currentMarks = [];
+let currentEdits = [];
+let currentPdfVersion = '';
+let currentPage = 1;
+let currentPageCount = 0;
+let lastCommand = null;   // 上一条成功执行的标记/修改指令，用于「怎么还是红的」这类追问
+let healthTries = 0;
+// 文献库
+let documentsCache = [];
+const selectedDocs = new Set();
+let managingDocs = false;
+let editingDocId = null;
+let progressTimer = null;
+
+const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'md', 'markdown', 'txt'];
+const FILE_ICONS = {
+    pdf:  ['fa-file-pdf-o',  'text-red-500'],
+    docx: ['fa-file-word-o', 'text-blue-600'],
+    text: ['fa-file-text-o', 'text-gray-500'],
+};
+
+function fileExtension(name) {
+    const dot = String(name).lastIndexOf('.');
+    return dot >= 0 ? String(name).slice(dot + 1).toLowerCase() : '';
+}
+
+const $ = (id) => document.getElementById(id);
+
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+
+function escapeAttr(text) {
+    return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
+function setToken(t) { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); }
+
+function authHeaders(extra) {
+    const headers = Object.assign({}, extra || {});
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    return headers;
+}
+
+// 把 [[p.3]] 渲染成可点击的出处按钮（PDF 显示"3页"，文本类显示"3段"）
+function renderRich(text) {
+    const unit = (typeof currentUnit === 'string') ? currentUnit : '页';
+    const escaped = escapeHtml(text);
+    const withChips = escaped.replace(/\[\[\s*p\.?\s*(\d+)\s*\]\]/g,
+        (m, n) => `<button class="cite-chip" data-page="${n}" title="跳转到第 ${n} ${unit}">${n}${unit}</button>`);
+    return withChips;
+}
+
+// 后端校验后会删掉检索片段里不存在的出处；这里给一条不打断阅读的提示
+function invalidCitationNote(pages) {
+    const list = Array.from(new Set((pages || []).map(Number).filter(Number.isFinite)));
+    if (!list.length) return '';
+    const unit = (typeof currentUnit === 'string') ? currentUnit : '页';
+    return `<div class="mt-1 text-[11px] text-amber-600 leading-snug">
+        <i class="fa fa-exclamation-triangle mr-1"></i>已移除 ${list.length} 处无法在原文核实的出处标记
+        （第 ${list.join('、')} ${unit}）</div>`;
+}
+
+// ==================================================================== 鉴权
+function showAuth(message) {
+    $('auth-overlay').classList.remove('hidden');
+    if (message) authError(message);
+}
+function hideAuth() { $('auth-overlay').classList.add('hidden'); }
+function authError(message) {
+    const box = $('auth-error');
+    box.textContent = message;
+    box.classList.remove('hidden');
+}
+function clearAuthError() { $('auth-error').classList.add('hidden'); }
+
+function setAuthMode(mode) {
+    authMode = mode;
+    const isLogin = mode === 'login';
+    $('mode-login').className = 'flex-1 py-1.5 text-sm rounded-md ' +
+        (isLogin ? 'bg-white shadow-sm font-medium text-primary' : 'text-gray-500');
+    $('mode-register').className = 'flex-1 py-1.5 text-sm rounded-md ' +
+        (!isLogin ? 'bg-white shadow-sm font-medium text-primary' : 'text-gray-500');
+    $('auth-submit').textContent = isLogin ? '登录' : '注册并登录';
+    $('auth-username').placeholder = isLogin ? '用户名' : '用户名（仅字母或数字）';
+    $('auth-password').placeholder = isLogin ? '密码' : '密码（至少 6 位）';
+    clearAuthError();
+}
+
+async function submitAuth() {
+    const username = $('auth-username').value.trim();
+    const password = $('auth-password').value;
+    if (!username || !password) { authError('用户名和密码都要填'); return; }
+    // 只有注册才校验格式；登录必须放行，否则历史上用中文注册的老账号会被挡在门外
+    if (authMode === 'register' && !/^[A-Za-z0-9]{2,32}$/.test(username)) {
+        authError(/[\u4e00-\u9fff]/.test(username)
+            ? '用户名不能使用中文，只能由字母和数字组成'
+            : '用户名只能由字母和数字组成，长度 2~32 位');
+        return;
+    }
+    clearAuthError();
+    $('auth-submit').textContent = '处理中…';
+    try {
+        const response = await fetch(`${API_BASE}/api/auth/${authMode}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) { authError(data.error || '操作失败'); return; }
+        setToken(data.token);
+        startApp(data.user);
+        if (data.claimed_legacy) {
+            setTimeout(() => alert(`已把升级前上传的 ${data.claimed_legacy} 个文件转移到你的账号下，正在后台重建索引。`), 400);
+        }
+    } catch (error) {
+        authError('连不上后端服务，请确认 启动.bat 已经运行：' + error.message);
+    } finally {
+        $('auth-submit').textContent = authMode === 'login' ? '登录' : '注册并登录';
+    }
+}
+
+async function logout() {
+    try { await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', headers: authHeaders() }); } catch (e) {}
+    setToken('');
+    location.reload();
+}
+
+// ---------------------------------------------------------------- 修改密码
+function pwdError(message) {
+    const box = $('pwd-error');
+    box.textContent = message;
+    box.classList.toggle('hidden', !message);
+}
+
+function openPasswordModal() {
+    ['pwd-old', 'pwd-new', 'pwd-confirm'].forEach((id) => { $(id).value = ''; });
+    pwdError('');
+    $('pwd-modal').classList.remove('hidden');
+    $('pwd-old').focus();
+}
+
+function closePasswordModal() { $('pwd-modal').classList.add('hidden'); }
+
+async function submitPasswordChange() {
+    const oldPassword = $('pwd-old').value;
+    const newPassword = $('pwd-new').value;
+    const confirmPassword = $('pwd-confirm').value;
+
+    if (!oldPassword || !newPassword) { pwdError('原密码和新密码都要填'); return; }
+    if (newPassword.length < 6) { pwdError('新密码至少 6 位'); return; }
+    if (newPassword !== confirmPassword) { pwdError('两次输入的新密码不一致'); return; }
+    if (newPassword === oldPassword) { pwdError('新密码不能和原密码相同'); return; }
+
+    pwdError('');
+    const button = $('pwd-submit');
+    button.textContent = '提交中…';
+    try {
+        const response = await apiFetch('/api/auth/password', {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+        });
+        const data = await response.json();
+        if (!response.ok) { pwdError(data.error || '修改失败'); return; }
+        // 后端作废了旧令牌，这里换上新签发的，当前窗口不会被踢下线
+        setToken(data.token);
+        closePasswordModal();
+        alert('密码已修改成功。其它设备或浏览器上的登录状态已失效，需要重新登录。');
+    } catch (error) {
+        pwdError('修改失败：' + error.message);
+    } finally {
+        button.textContent = '确定修改';
+    }
+}
+
+function startApp(user) {
+    hideAuth();
+    $('current-user').textContent = user.username;
+    // 只有管理员才显示后台入口；后端仍会再校验一次，前端隐藏只是不给普通用户添乱
+    $('admin-link').classList.toggle('hidden', user.role !== 'admin');
+    loadHealth();
+    loadDocuments();
+}
+
+// ==================================================================== 状态
+async function loadHealth() {
+    try {
+        const response = await fetch(`${API_BASE}/api/health`);
+        const data = await response.json();
+        const emb = data.embedding || {};
+        const llm = data.llm || {};
+        const device = emb.device === 'cuda' ? '<span class="text-green-600 font-medium">GPU</span>' : 'CPU';
+        $('engine-badge').innerHTML =
+            `<span>向量模型 ${escapeHtml((emb.name || '').split('/').pop())} · ${device} · ${emb.dim || '?'}维</span>` +
+            `<span class="${llm.available ? 'text-green-600' : 'text-red-500'}">${llm.available ? 'AI 已就绪' : 'AI 不可用'}</span>`;
+        if (!emb.loaded) {
+            $('engine-badge').innerHTML += '<span class="text-amber-600">模型加载中…</span>';
+            // 登录往往发生在模型加载完成之前，这里轮询到加载好为止（最多约 1 分钟）
+            if (healthTries < 20) {
+                healthTries += 1;
+                setTimeout(loadHealth, 3000);
+            }
+        } else {
+            healthTries = 0;
+        }
+    } catch (error) { /* 忽略 */ }
+}
+
+// ==================================================================== 文档列表
+async function apiFetch(path, options) {
+    const response = await fetch(API_BASE + path, options);
+    if (response.status === 401) { showAuth('登录已过期，请重新登录'); throw new Error('未登录'); }
+    return response;
+}
+
+async function loadDocuments() {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    let documents = [];
+    try {
+        const response = await apiFetch('/api/documents', { headers: authHeaders() });
+        documents = await response.json();
+    } catch (error) {
+        $('document-list').innerHTML =
+            `<li class="p-3 text-center text-red-500 text-xs">加载失败：${escapeHtml(error.message)}</li>`;
+        return;
+    }
+
+    documentsCache = Array.isArray(documents) ? documents : [];
+    const ids = new Set(documentsCache.map((doc) => doc.id));
+    [...selectedDocs].forEach((id) => { if (!ids.has(id)) selectedDocs.delete(id); });
+    updateFilterOptions();
+    renderDocumentList();
+
+    const indexing = documentsCache.filter((doc) => doc.index_status === 'running').length;
+    if (indexing > 0) pollTimer = setTimeout(loadDocuments, 3000);
+    if (currentDocumentId) {
+        hasIndex = (documentsCache.find(d => d.id === currentDocumentId) || {}).index_status === 'ready';
+    }
+}
+
+function updateFilterOptions() {
+    const categories = [...new Set(documentsCache.map(d => d.category).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, 'zh'));
+    const tags = [...new Set(documentsCache.flatMap(d => d.tags || []))]
+        .sort((a, b) => a.localeCompare(b, 'zh'));
+    fillFilterSelect($('category-filter'), categories, '全部分类');
+    fillFilterSelect($('tag-filter'), tags, '全部标签');
+    $('category-options').innerHTML = categories
+        .map(c => `<option value="${escapeAttr(c)}"></option>`).join('');
+}
+
+function fillFilterSelect(select, values, placeholder) {
+    const current = select.value;
+    select.innerHTML = `<option value="">${placeholder}</option>` +
+        values.map(v => `<option value="${escapeAttr(v)}">${escapeHtml(v)}</option>`).join('');
+    select.value = values.includes(current) ? current : '';
+}
+
+function filteredDocuments() {
+    const query = ($('doc-filter').value || '').trim().toLowerCase();
+    const category = $('category-filter').value;
+    const tag = $('tag-filter').value;
+    return documentsCache.filter((doc) => {
+        const display = String(doc.display_name || doc.filename || '').toLowerCase();
+        const original = String(doc.filename || '').toLowerCase();
+        if (query && !display.includes(query) && !original.includes(query)) return false;
+        if (category && (doc.category || '') !== category) return false;
+        if (tag && !(doc.tags || []).includes(tag)) return false;
+        return true;
+    });
+}
+
+function updateBatchBar() {
+    const bar = $('batch-bar');
+    if (bar) bar.classList.toggle('hidden', !managingDocs);
+    $('manage-toggle').textContent = managingDocs ? '完成' : '管理';
+    const count = selectedDocs.size;
+    $('batch-count').textContent = `已选 ${count} 篇`;
+    $('batch-delete').disabled = count === 0;
+    const visible = filteredDocuments().map(d => d.id);
+    const selectedVisible = visible.filter(id => selectedDocs.has(id)).length;
+    const all = visible.length > 0 && selectedVisible === visible.length;
+    $('batch-all').checked = all;
+    $('batch-all').indeterminate = !all && selectedVisible > 0;
+}
+
+function renderDocumentList() {
+    const list = $('document-list');
+    const total = documentsCache.length;
+    const docs = filteredDocuments();
+    $('doc-count').textContent = total ? `(${docs.length}/${total})` : '';
+    updateBatchBar();
+
+    if (!total) {
+        list.innerHTML = `<li class="p-4 text-center text-gray-400 text-xs">
+            <i class="fa fa-info-circle text-xl mb-1 block"></i>还没有文献，上传一篇试试</li>`;
+        return;
+    }
+    if (!docs.length) {
+        list.innerHTML = `<li class="p-4 text-center text-gray-400 text-xs">
+            <i class="fa fa-search text-xl mb-1 block"></i>没有匹配的文献</li>`;
+        return;
+    }
+    list.innerHTML = docs.map(docItemHtml).join('');
+}
+
+function docItemHtml(doc) {
+    const name = doc.display_name || doc.filename;
+    const isActive = doc.id === currentDocumentId;
+    const selected = selectedDocs.has(doc.id);
+    const progress = doc.progress || {};
+    const unit = doc.unit || '页';
+    const percent = Math.max(0, Math.min(100, Math.round(Number(progress.percent) || 0)));
+    const tags = (doc.tags || []).slice(0, 3);
+    const extraTags = Math.max(0, (doc.tags || []).length - tags.length);
+
+    let statusHtml;
+    if (doc.index_status === 'running') {
+        const done = doc.index_done || 0;
+        const total = doc.index_total || doc.chunk_count || 1;
+        const percentDone = Math.round(done * 100 / Math.max(total, 1));
+        const stageLabel = doc.index_stage === 'ocr' ? 'OCR 识别' : '建立索引';
+        statusHtml = `<div class="mt-1">
+            <div class="flex justify-between text-[11px] text-blue-600">
+                <span><i class="fa fa-spinner fa-spin mr-1"></i>${stageLabel}</span><span>${done}/${total}</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-1 mt-1">
+                <div class="bg-blue-500 h-1 rounded-full" style="width:${percentDone}%"></div>
+            </div></div>`;
+    } else if (doc.index_status === 'error') {
+        statusHtml = `<p class="text-[11px] text-red-500 mt-0.5" title="${escapeAttr(doc.index_error || '')}">
+            <i class="fa fa-exclamation-triangle mr-1"></i>索引失败（问答暂不可用）</p>`;
+    } else {
+        const ocrNote = doc.ocr_pages ? ` · OCR ${doc.ocr_pages} 页` : '';
+        statusHtml = `<p class="text-[11px] text-gray-400 mt-0.5">${doc.page_count || '?'} ${unit} · ${doc.chunk_count} 个片段${ocrNote}</p>`;
+    }
+
+    const chips = [];
+    if (doc.category) {
+        chips.push(`<span class="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 truncate max-w-[9rem]">${escapeHtml(doc.category)}</span>`);
+    }
+    tags.forEach((tag) => {
+        chips.push(`<span class="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 truncate max-w-[7rem]">#${escapeHtml(tag)}</span>`);
+    });
+    if (extraTags) chips.push(`<span class="text-gray-400">+${extraTags}</span>`);
+
+    const progressHtml = percent > 0 ? `<div class="mt-1">
+        <div class="w-full bg-gray-200 rounded-full h-0.5">
+            <div class="bg-emerald-500 h-0.5 rounded-full" style="width:${percent}%"></div>
+        </div>
+        <p class="text-[10px] text-gray-400 mt-0.5">已读 ${percent}%${progress.page ? ` · 上次第 ${progress.page} ${unit}` : ''}</p>
+    </div>` : '';
+
+    const icon = FILE_ICONS[doc.source_type] || FILE_ICONS.text;
+    const actions = managingDocs ? '' : `
+        <div class="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
+            <button class="edit-doc text-gray-400 hover:text-primary p-0.5" data-id="${doc.id}" title="编辑标题、分类、标签">
+                <i class="fa fa-pencil text-xs"></i>
+            </button>
+            <button class="delete-doc text-gray-400 hover:text-red-500 p-0.5" data-id="${doc.id}" title="删除">
+                <i class="fa fa-trash-o text-xs"></i>
+            </button>
+        </div>`;
+
+    return `<li data-id="${doc.id}" class="p-2 rounded-md hover:bg-neutral cursor-pointer group relative transition-all-300 ${isActive ? 'doc-active' : ''} ${selected ? 'ring-1 ring-primary/40 bg-primary/5' : ''}">
+        <div class="flex items-start">
+            ${managingDocs ? `<input type="checkbox" class="doc-select mt-1 mr-2 flex-shrink-0" data-id="${doc.id}" ${selected ? 'checked' : ''}>` : `<i class="fa ${icon[0]} ${icon[1]} mt-1 mr-2"></i>`}
+            <div class="flex-1 min-w-0">
+                <p class="text-xs font-medium truncate" title="${escapeAttr(name)}">${escapeHtml(name)}</p>
+                ${name !== doc.filename ? `<p class="text-[10px] text-gray-300 truncate" title="原名：${escapeAttr(doc.filename)}">原名：${escapeHtml(doc.filename)}</p>` : ''}
+                ${statusHtml}
+                ${chips.length ? `<div class="flex flex-wrap items-center gap-1 mt-1">${chips.join('')}</div>` : ''}
+                ${progressHtml}
+            </div>
+            ${actions}
+        </div>
+    </li>`;
+}
+
+function toggleDocSelection(id, force) {
+    if (force === undefined) force = !selectedDocs.has(id);
+    if (force) selectedDocs.add(id);
+    else selectedDocs.delete(id);
+    renderDocumentList();
+}
+
+function setManagingDocs(on) {
+    managingDocs = on;
+    selectedDocs.clear();
+    renderDocumentList();
+}
+
+function onDocumentListClick(event) {
+    if (event.target.closest('.doc-select')) return;
+    const deleteButton = event.target.closest('.delete-doc');
+    if (deleteButton) {
+        event.stopPropagation();
+        deleteDocumentById(deleteButton.dataset.id);
+        return;
+    }
+    const editButton = event.target.closest('.edit-doc');
+    if (editButton) {
+        event.stopPropagation();
+        openDocMeta(editButton.dataset.id);
+        return;
+    }
+    const item = event.target.closest('li[data-id]');
+    if (!item) return;
+    if (managingDocs) { toggleDocSelection(item.dataset.id); return; }
+    const doc = documentsCache.find(d => d.id === item.dataset.id);
+    if (doc) selectDocument(doc);
+}
+
+function onDocumentListChange(event) {
+    const checkbox = event.target.closest('.doc-select');
+    if (!checkbox) return;
+    toggleDocSelection(checkbox.dataset.id, checkbox.checked);
+}
+
+function clearPreview() {
+    $('pdf-empty').classList.remove('hidden');
+    $('pdf-frame').classList.add('hidden');
+    $('text-view').classList.add('hidden');
+    $('pdf-title').textContent = '原文预览';
+    $('pdf-page-hint').textContent = '点击答案里的出处可跳转';
+}
+
+async function deleteDocumentById(id) {
+    if (!confirm('确定删除这篇文献吗？')) return;
+    try {
+        const response = await apiFetch(`/api/documents/${id}/delete`, { method: 'DELETE', headers: authHeaders() });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '删除失败');
+        if (currentDocumentId === id) {
+            currentDocumentId = null;
+            currentFilename = '';
+            resetPanels();
+            clearPreview();
+        }
+        await loadDocuments();
+    } catch (error) { alert('删除失败：' + error.message); }
+}
+
+async function deleteSelectedDocuments() {
+    const ids = [...selectedDocs];
+    if (!ids.length) return;
+    if (!confirm(`确定删除选中的 ${ids.length} 篇文献吗？文献、索引和标记都会删除，且无法恢复。`)) return;
+    try {
+        const response = await apiFetch('/api/documents/batch-delete', {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ ids }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '批量删除失败');
+        if (ids.includes(currentDocumentId)) {
+            currentDocumentId = null;
+            currentFilename = '';
+            resetPanels();
+            clearPreview();
+        }
+        selectedDocs.clear();
+        managingDocs = false;
+        await loadDocuments();
+    } catch (error) { alert('批量删除失败：' + error.message); }
+}
+
+// ==================================================================== 编辑文献信息
+function openDocMeta(id) {
+    const doc = documentsCache.find(d => d.id === id);
+    if (!doc) return;
+    editingDocId = id;
+    $('meta-title').value = doc.display_name || doc.filename || '';
+    $('meta-category').value = doc.category || '';
+    $('meta-tags').value = (doc.tags || []).join('、');
+    $('meta-error').classList.add('hidden');
+    $('doc-meta-modal').classList.remove('hidden');
+    $('meta-title').focus();
+}
+
+function closeDocMeta() {
+    $('doc-meta-modal').classList.add('hidden');
+    editingDocId = null;
+}
+
+function showMetaError(message) {
+    const node = $('meta-error');
+    node.textContent = message || '';
+    node.classList.toggle('hidden', !message);
+}
+
+async function saveDocMeta() {
+    if (!editingDocId) return;
+    const title = $('meta-title').value.trim();
+    if (!title) { showMetaError('标题不能为空'); return; }
+    const tags = $('meta-tags').value.split(/[,，、;；\s]+/).map(s => s.trim()).filter(Boolean);
+    const button = $('meta-save');
+    button.disabled = true;
+    showMetaError('');
+    try {
+        const response = await apiFetch(`/api/documents/${editingDocId}`, {
+            method: 'PATCH',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                display_name: title,
+                category: $('meta-category').value.trim(),
+                tags,
+            }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '保存失败');
+        const index = documentsCache.findIndex(d => d.id === data.document.id);
+        if (index >= 0) documentsCache[index] = data.document;
+        updateFilterOptions();
+        if (currentDocumentId === data.document.id) {
+            currentFilename = data.document.display_name || data.document.filename;
+            $('pdf-title').textContent = currentFilename;
+        }
+        renderDocumentList();
+        closeDocMeta();
+    } catch (error) {
+        showMetaError(error.message);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function selectDocument(doc, page) {
+    // 跨文献检索结果只带少量字段，补全缓存里的标题、页数和阅读进度
+    const known = documentsCache.find(item => item.id === doc.id);
+    if (known) doc = Object.assign({}, known, doc);
+    currentDocumentId = doc.id;
+    currentFilename = doc.display_name || doc.filename;
+    currentSourceType = doc.source_type || 'pdf';
+    currentUnit = doc.unit || '页';
+    hasIndex = doc.index_status === 'ready';
+    document.querySelectorAll('#document-list li').forEach((item) => item.classList.remove('doc-active'));
+    loadDocuments();
+    resetPanels();
+    currentPageCount = Number(doc.page_count) || 0;
+    $('pdf-title').textContent = currentFilename;
+    // 从跨文献检索点进来时直接定位到页码；否则续读上次进度
+    if (page) openPage(page);
+    else showPreview(Number((doc.progress || {}).page) || 1);
+    loadSummary();
+    loadMarks();
+}
+
+function resetPanels() {
+    $('summary-content').innerHTML = `<div class="text-center text-gray-400 py-10 text-sm">
+        <i class="fa fa-file-text-o text-3xl mb-2 block"></i>点击上方「生成摘要」，或从左侧选择一篇文献</div>`;
+    $('qa-messages').innerHTML = `<div class="text-center text-gray-400 text-xs py-4">
+        提问，或直接下指令：<br>「标记第 3 页第 1 段」「把第 3 页第 1 段改成：新文字」「跳到第 5 页」</div>`;
+    currentMarks = [];
+    currentEdits = [];
+    currentPdfVersion = '';
+    currentPage = 1;
+    currentPageCount = 0;
+    if (progressTimer) { clearTimeout(progressTimer); progressTimer = null; }
+    $('page-nav').classList.add('hidden');
+    $('page-nav').classList.remove('flex');
+    lastCommand = null;
+    QA_HISTORY.length = 0;
+    QA_CONTEXT.length = 0;
+    QA_TRANSCRIPT.length = 0;
+    currentSummaryText = '';
+    currentSummaryMeta = null;
+    setExportHint('summary', '', false);
+    setExportHint('qa', '', false);
+    syncExportButtons();
+    renderMarks();
+}
+
+// ==================================================================== 原文预览
+function pdfUrl(page) {
+    const token = encodeURIComponent(getToken());
+    let url = `${API_BASE}/api/documents/${currentDocumentId}/file?token=${token}`;
+    // 版本号变化时换 URL，避免 Edge 缓存旧的未修改 PDF
+    if (currentPdfVersion) url += `&v=${encodeURIComponent(currentPdfVersion)}`;
+    if (page) url += `#page=${page}`;
+    return url;
+}
+
+// Chromium 原生 PDF 阅读器会把"仅 #page 不同"的 URL 当成同一份资源而忽略页号；
+// 换一个全新的 iframe，让 #page=N 作为首次导航生效，才能可靠跳页。
+function loadPdf(url) {
+    const old = $('pdf-frame');
+    const frame = document.createElement('iframe');
+    frame.id = 'pdf-frame';
+    frame.className = old.className;
+    frame.title = '原文预览';
+    old.replaceWith(frame);
+    frame.src = url;
+}
+
+function reloadPdf(page) {
+    if (!currentDocumentId || currentSourceType !== 'pdf') return;
+    loadPdf(pdfUrl(page || currentPage || 1));
+}
+
+// PDF 用浏览器原生阅读器；txt/md/docx 没有"页"，改成渲染正文段落
+function showPreview(unitNo) {
+    if (!currentDocumentId) return;
+    const target = Math.max(1, Number(unitNo) || 1);
+    currentPage = target;
+    $('pdf-empty').classList.add('hidden');
+    $('pdf-title').textContent = currentFilename;
+    $('import-highlights').classList.toggle('hidden', currentSourceType !== 'pdf');
+    $('page-nav').classList.remove('hidden');
+    $('page-nav').classList.add('flex');
+    if (currentSourceType === 'pdf') {
+        $('pdf-frame').classList.remove('hidden');
+        $('text-view').classList.add('hidden');
+        loadPdf(pdfUrl(target));
+        $('pdf-page-hint').textContent = target > 1
+            ? `已定位到第 ${target} ${currentUnit}`
+            : '点击答案里的页码可跳转';
+    } else {
+        $('pdf-frame').classList.add('hidden');
+        $('text-view').classList.remove('hidden');
+        $('pdf-page-hint').textContent = `点击答案里的编号，定位到对应段落`;
+        loadTextBlocks().then(() => { if (target > 1) scrollToBlock(target); });
+    }
+    updatePageControls();
+}
+
+function updatePageControls() {
+    const input = $('page-input');
+    if (!input) return;
+    const total = Number(currentPageCount) || 0;
+    const page = Math.max(1, Number(currentPage) || 1);
+    input.value = page;
+    input.max = total || '';
+    $('page-total').textContent = total || '?';
+    $('page-unit').textContent = currentUnit || '页';
+    $('page-prev').disabled = page <= 1;
+    $('page-next').disabled = total ? page >= total : false;
+    const percent = total ? Math.min(100, Math.round(page * 100 / total)) : 0;
+    $('progress-label').textContent = `已读 ${percent}%`;
+}
+
+function jumpToInputPage() {
+    if (!currentDocumentId) return;
+    let page = parseInt($('page-input').value, 10);
+    if (!page || page < 1) page = 1;
+    if (currentPageCount && page > currentPageCount) page = currentPageCount;
+    if (page === currentPage) { updatePageControls(); return; }
+    openPage(page);
+}
+
+// 阅读进度：先本地更新列表，再防抖写回后端
+function saveProgress(page) {
+    if (!currentDocumentId || !page) return;
+    const doc = documentsCache.find(d => d.id === currentDocumentId);
+    if (!doc) return;
+    const total = Number(currentPageCount) || Number(doc.page_count) || 0;
+    const percent = total ? Math.min(100, Math.round(page * 100 / total)) : 0;
+    doc.progress = { page, percent, updated_at: new Date().toISOString() };
+    doc.last_opened_at = doc.progress.updated_at;
+    $('progress-label').textContent = `已读 ${percent}%`;
+    renderDocumentList();
+
+    const docId = currentDocumentId;
+    if (progressTimer) clearTimeout(progressTimer);
+    progressTimer = setTimeout(async () => {
+        try {
+            const response = await apiFetch(`/api/documents/${docId}`, {
+                method: 'PATCH',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ progress: { page } }),
+            });
+            if (!response.ok) return;
+            const data = await response.json();
+            const index = documentsCache.findIndex(d => d.id === docId);
+            if (index >= 0) documentsCache[index] = data.document;
+        } catch (error) {
+            // 进度保存失败不打扰用户，下次跳页会重试
+        }
+    }, 800);
+}
+
+async function loadTextBlocks() {
+    const view = $('text-view');
+    view.innerHTML = `<div class="p-4 text-center text-gray-400">正在加载正文…</div>`;
+    try {
+        const response = await apiFetch(`/api/documents/${currentDocumentId}/blocks`,
+                                        { headers: authHeaders() });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '加载失败');
+        view.innerHTML = data.blocks.map((b) => `
+            <div id="blk-${b.page}" class="mb-2 p-3 rounded-lg whitespace-pre-wrap transition-all-300">
+                <div class="text-[11px] text-gray-400 mb-1">第 ${b.page} ${data.unit}${b.section ? ' · ' + escapeHtml(b.section) : ''}</div>
+                ${escapeHtml(b.text)}
+            </div>`).join('');
+    } catch (error) {
+        view.innerHTML = `<div class="p-4 text-center text-red-500">${escapeHtml(error.message)}</div>`;
+    }
+}
+
+function scrollToBlock(unitNo) {
+    const target = $(`blk-${unitNo}`);
+    if (!target) return false;
+    document.querySelectorAll('#text-view > div').forEach((node) => node.classList.remove('block-active'));
+    target.classList.add('block-active');
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('pdf-page-hint').textContent = `已定位到第 ${unitNo} ${currentUnit}`;
+    return true;
+}
+
+function openPage(unitNo) {
+    if (!currentDocumentId) { alert('请先选择一篇文献'); return; }
+    currentPage = unitNo;
+    const panel = $('pdf-panel');
+    if (panel.classList.contains('hidden')) {
+        panel.classList.remove('hidden');
+        panel.classList.add('flex');
+    }
+    $('pdf-empty').classList.add('hidden');
+
+    if (currentSourceType === 'pdf') {
+        $('pdf-frame').classList.remove('hidden');
+        $('text-view').classList.add('hidden');
+        loadPdf(pdfUrl(unitNo));
+        $('pdf-page-hint').textContent = `已跳转到第 ${unitNo} 页`;
+    } else {
+        $('pdf-frame').classList.add('hidden');
+        $('text-view').classList.remove('hidden');
+        if (!scrollToBlock(unitNo)) {
+            // 正文还没加载完，拉一次再定位
+            loadTextBlocks().then(() => scrollToBlock(unitNo));
+        }
+    }
+    updatePageControls();
+    saveProgress(unitNo);
+    if (window.innerWidth < 768) panel.scrollIntoView({ behavior: 'smooth' });
+}
+
+// ==================================================================== 标记 / 修改记录
+async function loadMarks() {
+    if (!currentDocumentId) {
+        currentMarks = [];
+        currentEdits = [];
+        currentPdfVersion = '';
+        renderMarks();
+        return;
+    }
+    let version = currentPdfVersion;
+    try {
+        const response = await apiFetch(`/api/documents/${currentDocumentId}/marks`,
+                                        { headers: authHeaders() });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '加载标记失败');
+        currentMarks = data.marks || [];
+        currentEdits = data.edits || [];
+        version = data.version || '';
+    } catch (error) {
+        currentMarks = [];
+        currentEdits = [];
+    }
+    const changed = version !== currentPdfVersion;
+    currentPdfVersion = version;
+    renderMarks();
+    // 版本变了说明 PDF 副本已更新，重新加载才能看到红色高亮/改字结果
+    if (changed && currentSourceType === 'pdf') reloadPdf(currentPage);
+}
+
+function renderMarks() {
+    const bar = $('marks-bar');
+    const list = $('marks-list');
+    if (!bar || !list) return;
+    const total = currentMarks.length + currentEdits.length;
+    $('marks-count').textContent = total;
+    if (!total) {
+        bar.classList.add('hidden');
+        list.innerHTML = '';
+        return;
+    }
+    bar.classList.remove('hidden');
+
+    const markRows = currentMarks.map((mark) => `
+        <div class="flex items-start gap-1">
+            <button class="cite-chip flex-shrink-0" data-page="${mark.page}"
+                    title="跳转到第 ${mark.page} ${mark.unit || currentUnit}">${mark.page}${mark.unit || currentUnit}</button>
+            ${mark.source === 'manual'
+                ? '<span class="text-[10px] text-amber-600 flex-shrink-0" title="从 PDF 手动高亮导入">手动</span>'
+                : ''}
+            <span class="flex-1 text-[11px] text-gray-600 truncate" title="${escapeHtml(mark.text)}">
+                第${mark.paragraph}段 · ${escapeHtml(mark.text)}</span>
+            <button class="mark-del flex-shrink-0 text-gray-400 hover:text-red-500" data-id="${mark.id}">
+                <i class="fa fa-times"></i></button>
+        </div>`).join('');
+
+    const editRows = currentEdits.map((edit) => {
+        const label = edit.type === 'replace' ? '改字' : '改样式';
+        const shown = edit.type === 'replace'
+            ? edit.text
+            : [edit.font, edit.color ? '换色' : ''].filter(Boolean).join('/') || '样式';
+        return `
+        <div class="flex items-start gap-1">
+            <button class="cite-chip flex-shrink-0" data-page="${edit.page}"
+                    title="跳转到第 ${edit.page} ${currentUnit}">${edit.page}${currentUnit}</button>
+            <span class="flex-1 text-[11px] text-amber-800 truncate"
+                  title="原：${escapeHtml(edit.original || '')}&#10;新：${escapeHtml(edit.text || '')}">
+                ${label} · 第${edit.paragraph}段 · ${escapeHtml(shown)}</span>
+            <button class="edit-del flex-shrink-0 text-gray-400 hover:text-red-500" data-id="${edit.id}">
+                <i class="fa fa-undo text-[11px]"></i></button>
+        </div>`;
+    }).join('');
+
+    list.innerHTML = markRows + editRows;
+
+    list.querySelectorAll('.mark-del').forEach((button) => {
+        button.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            try {
+                const response = await apiFetch(
+                    `/api/documents/${currentDocumentId}/marks/${button.dataset.id}`,
+                    { method: 'DELETE', headers: authHeaders() });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || '删除失败');
+                currentMarks = data.marks || [];
+                currentEdits = data.edits || [];
+                currentPdfVersion = data.version || '';
+                renderMarks();
+                reloadPdf(currentPage);
+            } catch (error) { /* 删除失败时保留原列表 */ }
+        });
+    });
+
+    list.querySelectorAll('.edit-del').forEach((button) => {
+        button.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            try {
+                const response = await apiFetch(
+                    `/api/documents/${currentDocumentId}/edits/${button.dataset.id}`,
+                    { method: 'DELETE', headers: authHeaders() });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || '撤销失败');
+                currentEdits = data.edits || [];
+                currentPdfVersion = data.version || '';
+                renderMarks();
+                reloadPdf(currentPage);
+            } catch (error) { /* 撤销失败时保留原列表 */ }
+        });
+    });
+}
+
+// ==================================================================== 跨文献检索
+async function searchLibrary() {
+    const query = $('library-query').value.trim();
+    const list = $('library-results');
+    const status = $('library-status');
+    if (!query) { list.classList.add('hidden'); return; }
+    list.classList.remove('hidden');
+    status.classList.add('hidden');
+    list.innerHTML = `<li class="text-[11px] text-gray-400 p-2">
+        <i class="fa fa-spinner fa-spin mr-1"></i>正在检索整个文献库…</li>`;
+    try {
+        const response = await apiFetch(`/api/library/search?q=${encodeURIComponent(query)}`,
+                                        { headers: authHeaders() });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '检索失败');
+        if (!data.results.length) {
+            list.innerHTML = `<li class="text-[11px] text-gray-400 p-2">${
+                data.searched ? '没有找到相关内容' : '还没有建好索引的文献'}</li>`;
+            return;
+        }
+        status.textContent = `已检索 ${data.searched} 篇文献`;
+        status.classList.remove('hidden');
+        list.innerHTML = data.results.map((result, i) => `
+            <li class="lib-hit p-2 rounded-md hover:bg-neutral cursor-pointer border border-gray-100" data-i="${i}">
+                <div class="flex items-center gap-1">
+                    <span class="text-[11px] font-medium text-gray-700 truncate flex-1"
+                          title="${escapeHtml(result.filename)}">${escapeHtml(result.filename)}</span>
+                    <span class="inline-block px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-[11px] flex-shrink-0">${result.page}${result.unit || '页'}</span>
+                </div>
+                <p class="text-[11px] text-gray-500 mt-0.5 truncate">${escapeHtml(result.text)}</p>
+            </li>`).join('');
+
+        list.querySelectorAll('.lib-hit').forEach((node) => {
+            node.addEventListener('click', () => {
+                const result = data.results[parseInt(node.dataset.i, 10)];
+                selectDocument({
+                    id: result.doc_id,
+                    filename: result.filename,
+                    source_type: result.source_type,
+                    unit: result.unit,
+                    index_status: 'ready',
+                }, result.page);
+            });
+        });
+    } catch (error) {
+        list.innerHTML = `<li class="text-[11px] text-red-500 p-2">检索失败：${escapeHtml(error.message)}</li>`;
+    }
+}
+
+function bindLibraryEvents() {
+    const input = $('library-query');
+    const button = $('library-search-btn');
+    if (!input || !button) return;
+    button.addEventListener('click', searchLibrary);
+    input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') { event.preventDefault(); searchLibrary(); }
+    });
+}
+
+// ==================================================================== 全库问答 / 对比综述
+let libReviewMode = 'review';
+let libAskBusy = false;
+let libReviewBusy = false;
+let libContext = [];
+let libContextScope = '';
+let libMsgSeq = 0;
+let LIB_ASK_EMPTY_HTML = '';
+
+function libraryScopeIds() {
+    if ($('lib-scope').value === 'selected' && selectedDocs.size) {
+        return [...selectedDocs];
+    }
+    return null;
+}
+
+function refreshLibraryScope() {
+    const ready = documentsCache.filter((doc) => doc.index_status === 'ready');
+    const selectedReady = ready.filter((doc) => selectedDocs.has(doc.id)).length;
+    const option = $('lib-scope').querySelector('option[value="selected"]');
+    option.disabled = !selectedReady;
+    option.textContent = `仅选中文献（${selectedReady} 篇）`;
+    if (!selectedReady && $('lib-scope').value === 'selected') $('lib-scope').value = 'all';
+    const allScope = $('lib-scope').value === 'all';
+    const count = allScope ? ready.length : selectedReady;
+    $('lib-scope-hint').textContent =
+        `当前范围：${allScope ? '全部' : '选中'} ${count} 篇已索引文献 · 回答会标注来源`;
+}
+
+function openLibraryModal() {
+    refreshLibraryScope();
+    $('library-modal').classList.remove('hidden');
+    setTimeout(() => $('lib-ask-input').focus(), 50);
+}
+
+function closeLibraryModal() {
+    $('library-modal').classList.add('hidden');
+}
+
+function switchLibraryTab(tab) {
+    const isAsk = tab === 'ask';
+    const askBtn = $('lib-tab-ask');
+    const reviewBtn = $('lib-tab-review');
+    askBtn.className = `flex-1 py-2.5 text-sm font-medium ${isAsk
+        ? 'text-primary border-b-2 border-primary' : 'text-gray-500 hover:text-primary'}`;
+    reviewBtn.className = `flex-1 py-2.5 text-sm font-medium ${!isAsk
+        ? 'text-primary border-b-2 border-primary' : 'text-gray-500 hover:text-primary'}`;
+    $('lib-panel-ask').classList.toggle('hidden', !isAsk);
+    $('lib-panel-review').classList.toggle('hidden', isAsk);
+}
+
+function setLibraryStatus(id, message, isError) {
+    const node = $(id);
+    if (!node) return;
+    node.textContent = message || '';
+    node.classList.toggle('hidden', !message);
+    node.classList.toggle('text-red-500', Boolean(message) && Boolean(isError));
+    node.classList.toggle('text-gray-400', !message || !isError);
+}
+
+function setLibraryReviewMode(mode) {
+    libReviewMode = mode;
+    document.querySelectorAll('.lib-mode-btn').forEach((button) => {
+        const active = button.dataset.mode === mode;
+        button.classList.toggle('bg-primary', active);
+        button.classList.toggle('text-white', active);
+        button.classList.toggle('bg-white', !active);
+        button.classList.toggle('text-gray-600', !active);
+    });
+}
+
+// 跨文献引用 [[s.3]] -> 可点击的来源按钮
+function renderLibraryRich(text) {
+    return escapeHtml(text).replace(/\[\[\s*s\.?\s*(\d+)\s*\]\]/g,
+        (m, n) => `<button type="button" data-lib-src="${n}"
+            class="inline-flex items-center px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-[11px] mx-0.5 hover:bg-blue-200"
+            title="查看来源 ${n}">来源${n}</button>`);
+}
+
+function libraryInvalidNote(invalid) {
+    const list = Array.from(new Set((invalid || []).map(Number).filter(Number.isFinite)));
+    if (!list.length) return '';
+    return `<div class="mt-1 text-[11px] text-amber-600 leading-snug">
+        <i class="fa fa-exclamation-triangle mr-1"></i>已移除 ${list.length} 处无法在来源中核实的出处标记</div>`;
+}
+
+function librarySourceMap(sources) {
+    const map = {};
+    (sources || []).forEach((source) => { map[Number(source.n)] = source; });
+    return map;
+}
+
+function librarySourcesHtml(sources) {
+    if (!Array.isArray(sources) || !sources.length) return '';
+    return `<div class="mt-2 pt-2 border-t border-gray-100">
+        <p class="text-[11px] font-medium text-gray-500 mb-1">参考来源（点击跳转）</p>
+        <div class="space-y-1">
+            ${sources.map((source) => `
+                <button type="button" data-lib-src="${source.n}"
+                        class="w-full text-left px-2 py-1 rounded hover:bg-neutral">
+                    <span class="inline-flex items-center px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-[11px] mr-1">来源${source.n}</span>
+                    <span class="text-[11px] font-medium text-gray-700">${escapeHtml(source.filename)}</span>
+                    <span class="text-[11px] text-primary ml-1">第 ${source.page}${escapeHtml(source.unit || '页')}</span>
+                    ${source.section ? `<span class="text-[11px] text-gray-400 ml-1">· ${escapeHtml(source.section)}</span>` : ''}
+                    <p class="text-[11px] text-gray-400 truncate mt-0.5">${escapeHtml((source.text || '').slice(0, 120))}…</p>
+                </button>`).join('')}
+        </div></div>`;
+}
+
+function appendLibraryMessage(role, html) {
+    const box = $('lib-ask-messages');
+    const empty = $('lib-ask-empty');
+    if (empty) empty.remove();
+    const wrap = document.createElement('div');
+    wrap.dataset.libMsg = String(++libMsgSeq);
+    if (role === 'user') {
+        wrap.className = 'flex justify-end';
+        wrap.innerHTML = `<div class="bg-neutral rounded-lg px-3 py-2 max-w-[85%] text-xs text-gray-700 whitespace-pre-wrap">${html}</div>`;
+    } else {
+        wrap.className = 'bg-white border border-gray-200 rounded-lg p-3 text-xs text-gray-700 leading-relaxed';
+        wrap.innerHTML = html;
+    }
+    box.appendChild(wrap);
+    box.scrollTop = box.scrollHeight;
+    return wrap;
+}
+
+function jumpToLibrarySource(source) {
+    if (!source) return;
+    closeLibraryModal();
+    selectDocument({
+        id: source.doc_id,
+        filename: source.filename,
+        display_name: source.filename,
+        source_type: source.source_type || 'pdf',
+        unit: source.unit || '页',
+        index_status: 'ready',
+    }, source.page);
+}
+
+function bindLibrarySourceClicks(container) {
+    container.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-lib-src]');
+        if (!button) return;
+        const holder = button.closest('[data-lib-msg]');
+        const source = holder && holder.__sources && holder.__sources[Number(button.dataset.libSrc)];
+        jumpToLibrarySource(source);
+    });
+}
+
+async function sendLibraryQuestion() {
+    if (libAskBusy) return;
+    const input = $('lib-ask-input');
+    const question = input.value.trim();
+    if (!question) return;
+    const readyCount = documentsCache.filter((doc) => doc.index_status === 'ready').length;
+    if (!readyCount) {
+        setLibraryStatus('lib-ask-status', '文献库里还没有完成索引的文献', true);
+        return;
+    }
+    input.value = '';
+    const scopeKey = $('lib-scope').value === 'selected'
+        ? [...selectedDocs].sort().join(',') : 'all';
+    if (scopeKey !== libContextScope) { libContext.length = 0; libContextScope = scopeKey; }
+    const history = libContext.slice(-8);
+    const docIds = libraryScopeIds();
+
+    appendLibraryMessage('user', escapeHtml(question));
+    const bubble = appendLibraryMessage('assistant',
+        '<span class="text-gray-400"><i class="fa fa-spinner fa-spin mr-1"></i>正在检索整个文献库…</span>');
+    libAskBusy = true;
+    $('lib-ask-send').disabled = true;
+    let accumulated = '';
+
+    await streamRequest('/api/library/ask/stream', {
+        onStatus: (message) => setLibraryStatus('lib-ask-status', message),
+        onDelta: (piece) => {
+            accumulated += piece;
+            bubble.innerHTML = renderLibraryRich(accumulated);
+            $('lib-ask-messages').scrollTop = $('lib-ask-messages').scrollHeight;
+        },
+        onDone: (payload) => {
+            const finalText = typeof payload.text === 'string' ? payload.text : accumulated;
+            bubble.innerHTML = renderLibraryRich(finalText)
+                + libraryInvalidNote(payload.invalid_citations)
+                + librarySourcesHtml(payload.sources);
+            bubble.__sources = librarySourceMap(payload.sources);
+            libContext.push({ q: question, a: finalText.slice(0, 500), pages: [] });
+            if (libContext.length > 12) libContext.splice(0, libContext.length - 12);
+            setLibraryStatus('lib-ask-status',
+                `已综合 ${(payload.documents || []).length} 篇文献 · ${(payload.sources || []).length} 条来源`);
+            $('lib-ask-messages').scrollTop = $('lib-ask-messages').scrollHeight;
+        },
+        onError: (message) => {
+            bubble.className = 'bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-600';
+            bubble.textContent = message;
+        },
+    }, {
+        method: 'POST',
+        body: JSON.stringify({ question, history, doc_ids: docIds }),
+    });
+
+    libAskBusy = false;
+    $('lib-ask-send').disabled = false;
+}
+
+function renderLibraryReport(container, text, payload) {
+    const sections = splitSections(text);
+    let html = '';
+    if (!sections.length) {
+        html = `<div class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">${renderLibraryRich(text)}</div>`;
+    } else {
+        html = sections.map((section) => `
+            <div class="bg-neutral rounded-lg p-3 mb-2">
+                <h4 class="text-sm font-medium mb-2 flex items-center">
+                    <i class="fa ${sectionIcon(section.title)} text-primary mr-1.5"></i>${escapeHtml(section.title)}
+                </h4>
+                <p class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">${renderLibraryRich(section.body)}</p>
+            </div>`).join('');
+    }
+    html += `<div class="text-[11px] text-gray-400 text-right mt-1">
+        ${escapeHtml(payload.model || '')} · 综合 ${(payload.documents || []).length} 篇文献
+    </div>`;
+    html += libraryInvalidNote(payload.invalid_citations);
+    html += librarySourcesHtml(payload.sources);
+    container.innerHTML = `<div data-lib-msg="${++libMsgSeq}">${html}</div>`;
+    const holder = container.firstElementChild;
+    if (holder) holder.__sources = librarySourceMap(payload.sources);
+}
+
+async function runLibraryReview() {
+    if (libReviewBusy) return;
+    const topic = $('lib-review-topic').value.trim();
+    const docIds = libraryScopeIds();
+    const readyCount = documentsCache.filter((doc) => doc.index_status === 'ready').length;
+    if (!readyCount) {
+        setLibraryStatus('lib-review-status', '文献库里还没有完成索引的文献', true);
+        return;
+    }
+    const output = $('lib-review-output');
+    const kind = libReviewMode === 'compare' ? '对比分析' : '综述';
+    output.innerHTML = `<div class="text-xs text-gray-400 p-2">
+        <i class="fa fa-spinner fa-spin mr-1"></i>正在准备材料…</div>`;
+    libReviewBusy = true;
+    $('lib-review-run').disabled = true;
+    let accumulated = '';
+
+    await streamRequest('/api/library/review/stream', {
+        onStatus: (message) => setLibraryStatus('lib-review-status', message),
+        onDelta: (piece) => {
+            accumulated += piece;
+            output.innerHTML = `<div class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">${renderLibraryRich(accumulated)}</div>`;
+            output.scrollTop = output.scrollHeight;
+        },
+        onDone: (payload) => {
+            const finalText = typeof payload.text === 'string' ? payload.text : accumulated;
+            renderLibraryReport(output, finalText, payload);
+            setLibraryStatus('lib-review-status',
+                `已基于 ${(payload.documents || []).length} 篇文献生成${kind}`);
+            output.scrollTop = 0;
+        },
+        onError: (message) => {
+            output.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-600">
+                ${escapeHtml(kind)}生成失败：${escapeHtml(message)}</div>`;
+            setLibraryStatus('lib-review-status', '');
+        },
+    }, {
+        method: 'POST',
+        body: JSON.stringify({ topic, mode: libReviewMode, doc_ids: docIds }),
+    });
+
+    libReviewBusy = false;
+    $('lib-review-run').disabled = false;
+}
+
+function bindLibraryAssistant() {
+    LIB_ASK_EMPTY_HTML = $('lib-ask-messages').innerHTML;
+    $('library-assistant-btn').addEventListener('click', openLibraryModal);
+    $('library-modal-close').addEventListener('click', closeLibraryModal);
+    $('library-modal').addEventListener('click', (event) => {
+        if (event.target === $('library-modal')) closeLibraryModal();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !$('library-modal').classList.contains('hidden')) {
+            closeLibraryModal();
+        }
+    });
+
+    $('lib-tab-ask').addEventListener('click', () => switchLibraryTab('ask'));
+    $('lib-tab-review').addEventListener('click', () => switchLibraryTab('review'));
+    $('lib-scope').addEventListener('change', () => {
+        refreshLibraryScope();
+        libContextScope = '';
+    });
+    document.querySelectorAll('.lib-mode-btn').forEach((button) => {
+        button.addEventListener('click', () => setLibraryReviewMode(button.dataset.mode));
+    });
+
+    $('lib-ask-send').addEventListener('click', sendLibraryQuestion);
+    $('lib-ask-input').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') { event.preventDefault(); sendLibraryQuestion(); }
+    });
+    $('lib-ask-clear').addEventListener('click', () => {
+        libContext.length = 0;
+        libContextScope = '';
+        $('lib-ask-messages').innerHTML = LIB_ASK_EMPTY_HTML;
+        setLibraryStatus('lib-ask-status', '');
+    });
+    $('lib-review-run').addEventListener('click', runLibraryReview);
+    $('lib-review-topic').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') { event.preventDefault(); runLibraryReview(); }
+    });
+
+    bindLibrarySourceClicks($('lib-ask-messages'));
+    bindLibrarySourceClicks($('lib-review-output'));
+}
+
+async function exportMarks() {
+    if (!currentDocumentId) return { ok: false, message: '请先选择一篇文献' };
+    if (!currentMarks.length) {
+        return { ok: false, message: '还没有任何标记，先说「标记第 3 页第 1 段」' };
+    }
+    try {
+        const response = await apiFetch(
+            `/api/documents/${currentDocumentId}/marks/export`,
+            { headers: authHeaders() });
+        if (!response.ok) {
+            let message = `导出失败 ${response.status}`;
+            try { const data = await response.json(); message = data.error || message; } catch (e) {}
+            return { ok: false, message };
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${currentFilename.replace(/\.[^.]+$/, '')}_标记.docx`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return { ok: true };
+    } catch (error) {
+        return { ok: false, message: error.message };
+    }
+}
+
+// 浏览器原生阅读器里的高亮不在服务端，需要把标注后的 PDF 传回来解析
+async function importHighlights(file) {
+    if (!currentDocumentId) return { ok: false, message: '请先选择一篇文献' };
+    if (currentSourceType !== 'pdf') return { ok: false, message: '只有 PDF 支持导入手动高亮' };
+    const form = new FormData();
+    form.append('file', file);
+    try {
+        const response = await apiFetch(
+            `/api/documents/${currentDocumentId}/marks/import`,
+            { method: 'POST', body: form, headers: authHeaders() });
+        let data = {};
+        try { data = await response.json(); } catch (e) {}
+        if (!response.ok) return { ok: false, message: data.error || `HTTP ${response.status}` };
+        currentMarks = data.marks || currentMarks;
+        currentEdits = data.edits || currentEdits;
+        currentPdfVersion = data.version || String(Date.now());
+        renderMarks();
+        reloadPdf(currentPage);
+        return { ok: true, data };
+    } catch (error) {
+        return { ok: false, message: error.message };
+    }
+}
+
+// 把「第五页」「十二」这类中文数字转成整数
+function parseChineseNumber(token) {
+    const value = String(token || '').trim();
+    if (!value) return NaN;
+    if (/^\d+$/.test(value)) return parseInt(value, 10);
+    const digits = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4,
+                     五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+    let total = 0;
+    let current = 0;
+    for (const ch of value) {
+        if (ch in digits) current = digits[ch];
+        else if (ch === '十') { total += (current || 1) * 10; current = 0; }
+        else if (ch === '百') { total += (current || 1) * 100; current = 0; }
+        else return NaN;
+    }
+    return total + current;
+}
+
+// 本地指令解析：跳页 / 标记 / 导出 / 查看 / 改字改色。命中的指令不调用大模型，立刻执行。
+// 规则故意放松：支持「页/面/p4」、省略「第」、中英文数字、逗号顿号、客套话和常见近义词。
+const NUM_TOKEN = '[0-9０-９零〇一二两三四五六七八九十百]+';
+const COLOR_WORDS = '红色|蓝色|绿色|黑色|橙色|紫色|灰色|白色|红|蓝|绿|黑|橙|紫|灰|白';
+const FONT_WORDS = '微软雅黑|雅黑|宋体|黑体|楷体';
+const CHANGE_VERBS = '改成|改为|改称|改做|换成|换为|换做|替换成|替换为|修改成|修改为|' +
+    '更改成|更改为|写成|写为|写作|设成|设为|设置成|设置为|变成|变为|' +
+    '调整成|调整为|调成|调为|弄成|搞成|标成|涂成|染成';
+const LOCATION_RE = new RegExp(
+    `(?:第\\s*)?(?:(?:[pP]|page|Page)\\s*\\.?\\s*(${NUM_TOKEN})|(${NUM_TOKEN})\\s*(页|面|段))` +
+    `(?:[，,、\\s]*(?:[的之中上里]\\s*)*(?:第\\s*)?(${NUM_TOKEN})\\s*(?:自然段|段|小节|条|部分))?`);
+
+function normalizeDigits(text) {
+    return String(text || '').replace(/[０-９]/g,
+        (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+}
+
+// 从「红色黑体」这类短语里拆出颜色、字体和剩下的正文
+function parseStyleSpec(value) {
+    const fontMatch = value.match(new RegExp(FONT_WORDS));
+    const font = fontMatch ? fontMatch[0] : '';
+    const withoutFont = font ? value.replace(font, '') : value;
+    const colorMatch = withoutFont.match(new RegExp(COLOR_WORDS));
+    const color = colorMatch ? colorMatch[0] : '';
+    let rest = withoutFont.replace(color, '')
+                          .replace(/[，,。；;、：:！!？?\s]/g, '')
+                          .replace(/^(?:和|与|及)/, '');
+    rest = rest.replace(/^(?:用|以|显示为|呈现为|呈现|显示|成|为|是)/, '');
+    rest = rest.replace(/^(?:的|用)?(?:文字|文本|内容|字|字样|字体|颜色|格式)$/, '');
+    return { color, font, rest };
+}
+
+function stripQuotes(value) {
+    return value.replace(/^[\s“”"'‘’「」『』]+|[\s“”"'‘’「」『』]+$/g, '');
+}
+
+function parseCommand(text) {
+    const q = normalizeDigits(String(text || '').trim());
+    // 明显是在问「怎么改/为什么」，交给问答模型，不当作指令
+    if (/(为什么|为何|怎么改|如何改|怎样改|什么是)/.test(q)) return null;
+    if (/(导出|整理|生成|保存).{0,12}(word|docx|标记)|(所有|全部).{0,4}标记|标记.{0,6}(导出|整理)|标记列表/i.test(q)) {
+        return { type: 'export' };
+    }
+    if (/(查看|列出|显示|看看|有哪些|多少|我的|列一下).{0,8}标记|标记.{0,4}(列表|有哪些|呢)/.test(q)) {
+        return { type: 'list' };
+    }
+
+    const loc = q.match(LOCATION_RE);
+    const page = loc ? parseChineseNumber(loc[1] || loc[2]) : NaN;
+    const paragraph = loc ? parseChineseNumber(loc[4] || '1') : 1;
+
+    // 取消/删除语义必须先于新增判断，否则「取消…标记」会被当成新增标记
+    if (loc) {
+        const cancelMark = /(取消|删除|删掉|去掉|清除|移除|撤销)[^，,。；;]{0,10}(标记|标注|高亮|划线)/.test(q)
+            || /(标记|标注|高亮|划线)[^，,。；;]{0,10}(取消|删除|删掉|去掉|清除|移除|撤销)/.test(q);
+        const cancelEdit = /(取消|删除|删掉|去掉|清除|移除|撤销|还原)[^，,。；;]{0,10}(修改|改字|改色|样式|格式)/.test(q)
+            || /(修改|改字|改色)[^，,。；;]{0,10}(取消|删除|删掉|去掉|清除|移除|撤销|还原)/.test(q);
+        if (cancelEdit) return { type: 'unedit', page, paragraph };
+        if (cancelMark) return { type: 'unmark', page, paragraph };
+    }
+
+    if (loc && /(标记|标注|标出|高亮|划线|涂红|涂色|做个记号|做标记|加个标记|标一下)/.test(q)) {
+        return { type: 'mark', page, paragraph };
+    }
+
+    if (loc) {
+        const tail = q.slice((loc.index || 0) + loc[0].length)
+            .replace(/^[，,。；;、：:\s]+/, '')
+            .replace(/^(?:帮我|帮忙|请你|请|麻烦你|麻烦|给我|替我)\s*/, '');
+        const direct = q.match(/标(红|蓝|绿|黑|橙|紫|灰|白)/);
+        if (direct) {
+            return { type: 'edit', editType: 'recolor', page, paragraph, color: direct[1] };
+        }
+
+        // 「改成/换成/设置成…」后面跟内容；只写颜色字体时按改样式处理
+        const change = tail.match(new RegExp(
+            `^(?:的|中|上|里)?\\s*(?:文字|文本|内容|字体|字号|颜色|字色|字体颜色|文字颜色|格式)?\\s*` +
+            `(?:都|也|全部|全都|一起)?\\s*(?:${CHANGE_VERBS})\\s*[：:]?\\s*([\\s\\S]+)$`));
+        if (change) {
+            const value = stripQuotes(change[1].trim());
+            const style = parseStyleSpec(value);
+            if (!style.rest) {
+                return { type: 'edit', editType: 'recolor', page, paragraph,
+                         color: style.color, font: style.font };
+            }
+            return { type: 'edit', editType: 'replace', page, paragraph,
+                     text: value, color: style.color, font: style.font };
+        }
+
+        // 没有动词也可以：「第 3 页第 1 段用红色黑体」「…显示为红色」
+        const outside = (q.slice(0, loc.index) + ' ' + tail).trim();
+        const style = parseStyleSpec(outside);
+        if ((style.color || style.font) && !style.rest) {
+            return { type: 'edit', editType: 'recolor', page, paragraph,
+                     color: style.color, font: style.font };
+        }
+    }
+
+    if (loc && /(跳转|跳到|跳至|翻到|翻至|定位|打开|前往|转到|切换到|查看|看|显示|到|至)/.test(q)) {
+        return { type: 'jump', page };
+    }
+    return null;
+}
+
+// 看起来像在让 PDF 做修改，但当前语法没听懂：本地给提示，别丢给问答模型
+function looksLikeEditCommand(text) {
+    const q = normalizeDigits(text).trim();
+    if (!q || /[？?]\s*$/.test(q)) return false;
+    if (/(什么|为什么|怎么|如何|哪|是否|吗|含义|意思|介绍|讲讲|解释)/.test(q)) return false;
+    if (!LOCATION_RE.test(q)) return false;
+    return /(改|换|变|标|涂|高亮|字体|字号|颜色|格式|加粗|斜体|下划线|删除|删掉|去掉)/.test(q);
+}
+
+// 本地没解析出来、但看起来是在对文献下指令：交给大模型理解
+function looksLikeNaturalCommand(text) {
+    const q = normalizeDigits(String(text || '').trim());
+    if (!q) return false;
+    const action = /(取消|删除|删掉|去掉|清除|移除|撤销|还原|标记|标注|标红|标蓝|标绿|高亮|划线|改成|改为|换成|换为|替换成|替换为|修改成|修改为|设置成|设为|变成|加粗|斜体|下划线|字号|字体|颜色|导出|整理|跳转|跳到|翻到|定位|打开|列出标记|查看标记)/;
+    if (!action.test(q)) return false;
+    // 纯提问（总结/解释/为什么…）且没有明确操作动词时，直接走问答
+    if (/(总结|概括|摘要|翻译|解释|介绍|分析|为什么|为何|如何|怎么|怎样|什么是|是什么|区别|意义|含义)/.test(q) &&
+        !/(改成|改为|换成|取消|删除|撤销|标记第|标记一下|高亮第|导出|跳到|跳转|翻到|打开第)/.test(q)) {
+        return false;
+    }
+    return true;
+}
+
+// 刚取消过标记/修改，用户追问「怎么还是红的」「标记还在」
+function isFollowUpComplaint(text) {
+    const q = normalizeDigits(String(text || '').trim());
+    if (!q) return false;
+    return /(还是|仍然|依然|怎么还|为什么还|怎么还有|没(有)?(取消|删掉|去掉|清掉|变)|标记还在|高亮还在|标注还在|红色的?还在|还是红|还在红|仍有红)/.test(q);
+}
+
+function markWhere(page, paragraph) {
+    return currentSourceType === 'pdf'
+        ? `第 ${page} 页第 ${paragraph} 段`
+        : `第 ${page} ${currentUnit}`;
+}
+
+function normalizeRemoteCommand(raw) {
+    if (!raw || !raw.action) return null;
+    const command = {
+        type: raw.action,
+        page: Number(raw.page) || 0,
+        paragraph: Number(raw.paragraph) || 1,
+    };
+    if (raw.action === 'edit') {
+        command.editType = raw.edit_type === 'replace' ? 'replace' : 'recolor';
+        if (raw.text) command.text = String(raw.text);
+        if (raw.color) command.color = String(raw.color);
+        if (raw.font) command.font = String(raw.font);
+    }
+    if (raw.reply) command.reply = String(raw.reply);
+    return command;
+}
+
+async function interpretCommandRemote(text) {
+    const response = await apiFetch(`/api/documents/${currentDocumentId}/command`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ text }),
+    });
+    let data = {};
+    try { data = await response.json(); } catch (error) { /* 非 JSON 响应 */ }
+    if (!response.ok) throw new Error(data.error || `指令解析失败（${response.status}）`);
+    return normalizeRemoteCommand(data.command);
+}
+
+async function runCommand(command, answerId) {
+    const finish = (html, isError) => {
+        const node = $(answerId);
+        if (!node) return;
+        node.classList.remove('cursor-blink', 'text-gray-400');
+        node.className = isError ? 'text-xs text-red-600' : 'text-xs text-gray-700 leading-relaxed';
+        node.innerHTML = html;
+    };
+
+    if (command.type === 'unsupported') {
+        finish(escapeHtml(command.reply ||
+            '这个操作暂时还不支持。目前支持跳转、标记/取消标记、原位改字、改颜色和改字体。'), true);
+        return;
+    }
+
+    if (command.type === 'jump') {
+        if (!Number.isFinite(command.page) || command.page < 1) {
+            finish('没听懂页码，换个说法试试，比如「跳到第 5 页」。', true);
+            return;
+        }
+        openPage(command.page);
+        finish(`已跳转到<b>第 ${command.page} ${currentUnit}</b>。`);
+        return;
+    }
+
+    if (command.type === 'unmark' || command.type === 'unedit') {
+        if (!Number.isFinite(command.page) || command.page < 1) {
+            finish('没听懂页码，换个说法试试。', true);
+            return;
+        }
+        const isMark = command.type === 'unmark';
+        const source = isMark ? currentMarks : currentEdits;
+        const hits = source.filter((item) => item.page === command.page &&
+            (item.paragraph || 1) === command.paragraph);
+        if (!hits.length) {
+            finish(`${markWhere(command.page, command.paragraph)}没有${isMark ? '标记' : '修改记录'}。`, true);
+            return;
+        }
+        try {
+            let data = {};
+            // 同位置可能因为重复指令留下多条记录，一次全部清掉，避免「取消了还红着」
+            for (const target of hits) {
+                const response = await apiFetch(
+                    `/api/documents/${currentDocumentId}/${isMark ? 'marks' : 'edits'}/${target.id}`,
+                    { method: 'DELETE', headers: authHeaders() });
+                data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(data.error || '取消失败');
+            }
+            if (data.marks) currentMarks = data.marks;
+            if (data.edits) currentEdits = data.edits;
+            currentPdfVersion = data.version || '';
+            lastCommand = { type: command.type, page: command.page, paragraph: command.paragraph };
+            renderMarks();
+            openPage(command.page);
+            finish(`已取消 ${markWhere(command.page, command.paragraph)} 的${isMark ? '标记' : '修改'}${hits.length > 1 ? `（共 ${hits.length} 条）` : ''}。`);
+        } catch (error) {
+            finish('取消失败：' + error.message, true);
+        }
+        return;
+    }
+
+    if (command.type === 'list') {
+        if (!currentMarks.length && !currentEdits.length) {
+            finish('这篇文献还没有标记或修改。说「标记第 3 页第 1 段」即可添加。');
+            return;
+        }
+        const markLines = currentMarks.map((mark) => {
+            const where = currentSourceType === 'pdf'
+                ? `第 ${mark.page} 页第 ${mark.paragraph} 段`
+                : `第 ${mark.page} ${mark.unit || currentUnit}`;
+            return `· 标记 ${where}：${escapeHtml(mark.text.slice(0, 40))}…`;
+        });
+        const editLines = currentEdits.map((edit) => {
+            const label = edit.type === 'replace' ? '改字' : '改样式';
+            return `· ${label} 第 ${edit.page} 页第 ${edit.paragraph} 段：${escapeHtml((edit.text || '').slice(0, 40))}…`;
+        });
+        finish(`当前共 <b>${currentMarks.length + currentEdits.length}</b> 条记录：<br>` +
+               markLines.concat(editLines).join('<br>'));
+        return;
+    }
+
+    if (command.type === 'mark') {
+        if (!Number.isFinite(command.page) || command.page < 1) {
+            finish('没听懂页码，换个说法试试，比如「标记第 3 页第 1 段」。', true);
+            return;
+        }
+        try {
+            const response = await apiFetch(`/api/documents/${currentDocumentId}/marks`, {
+                method: 'POST',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ page: command.page, paragraph: command.paragraph }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || '标记失败');
+            currentMarks = data.marks || [];
+            currentEdits = data.edits || [];
+            currentPdfVersion = data.version || '';
+            lastCommand = { type: 'mark', page: command.page, paragraph: command.paragraph };
+            renderMarks();
+            openPage(command.page);
+            finish(`已记录标记：<b>${markWhere(command.page, command.paragraph)}</b>
+                <div class="mt-2 p-2 bg-amber-50 border-l-2 border-amber-400 text-[11px] text-gray-600">
+                    ${escapeHtml((data.mark.text || '').slice(0, 180))}…</div>
+                <p class="mt-1 text-[11px] text-gray-400">
+                    已在 PDF 上生成红色高亮（原文件保留）。可点击跳转、可导出 Word、可在右侧列表删除。</p>`);
+        } catch (error) {
+            finish('标记失败：' + error.message, true);
+        }
+        return;
+    }
+
+    if (command.type === 'edit') {
+        if (currentSourceType !== 'pdf') {
+            finish('目前只支持在 PDF 上改字/改样式，Word/txt 暂不支持。', true);
+            return;
+        }
+        if (!Number.isFinite(command.page) || command.page < 1) {
+            finish('没听懂页码，换个说法试试，比如「把第 3 页第 1 段改成：新的文字」。', true);
+            return;
+        }
+        const where = `第 ${command.page} 页第 ${command.paragraph} 段`;
+        const appliedStyle = [command.color, command.font].filter(Boolean).join('、');
+        const styleText = appliedStyle || '新样式';
+        const desc = command.editType === 'replace'
+            ? `将把 <b>${where}</b> 的文字改为${appliedStyle ? `，并设为 <b>${escapeHtml(appliedStyle)}</b>` : ''}：
+               <div class="mt-1 p-2 bg-amber-50 border-l-2 border-amber-400 text-[11px] text-gray-700">
+                   ${escapeHtml(command.text)}</div>`
+            : `将把 <b>${where}</b> 改成 <b>${escapeHtml(styleText)}</b>。`;
+        const node = $(answerId);
+        if (!node) return;
+        node.classList.remove('cursor-blink', 'text-gray-400');
+        node.className = 'text-xs text-gray-700 leading-relaxed';
+        node.innerHTML = `${desc}
+            <div class="mt-2 flex gap-2">
+                <button id="${answerId}-apply" class="text-xs px-2 py-1 bg-primary text-white rounded hover:bg-primary/90">确认应用</button>
+                <button id="${answerId}-cancel" class="text-xs px-2 py-1 bg-gray-200 text-gray-600 rounded hover:bg-gray-300">取消</button>
+            </div>
+            <p class="mt-1 text-[11px] text-gray-400">
+                会写入新的 PDF 副本，原文件保留；应用后可在右侧「标记 / 修改」列表撤销。</p>`;
+
+        $(`${answerId}-cancel`).onclick = () => finish('已取消，没有修改 PDF。');
+        $(`${answerId}-apply`).onclick = async () => {
+            const button = $(`${answerId}-apply`);
+            if (button) { button.textContent = '应用中…'; button.disabled = true; }
+            const body = {
+                type: command.editType,
+                page: command.page,
+                paragraph: command.paragraph,
+            };
+            if (command.editType === 'replace') body.text = command.text;
+            if (command.color) body.color = command.color;
+            if (command.font) body.font = command.font;
+            try {
+                const response = await apiFetch(`/api/documents/${currentDocumentId}/edits`, {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body),
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || '修改失败');
+                currentEdits = data.edits || [];
+                currentPdfVersion = data.version || '';
+                lastCommand = { type: 'edit', page: command.page, paragraph: command.paragraph };
+                renderMarks();
+                openPage(command.page);
+                finish(`已应用：${desc}
+                    <p class="mt-1 text-[11px] text-green-600">
+                        PDF 已更新并跳转到该页；原文件保留，可在右侧列表撤销。</p>`);
+            } catch (error) {
+                finish('修改失败：' + error.message, true);
+            }
+        };
+        return;
+    }
+
+    if (command.type === 'export') {
+        const result = await exportMarks();
+        finish(result.ok ? `已把 ${currentMarks.length} 条标记导出为 Word。`
+                         : '导出失败：' + result.message, !result.ok);
+    }
+}
+
+// ==================================================================== 流式读取
+async function streamRequest(path, handlers, options) {
+    let response;
+    const config = Object.assign({}, options || {});
+    config.headers = Object.assign(authHeaders(), (options && options.headers) || {});
+    if (config.body && !config.headers['Content-Type']) {
+        config.headers['Content-Type'] = 'application/json';
+    }
+    try {
+        response = await apiFetch(path, config);
+    } catch (error) { handlers.onError && handlers.onError(error.message); return; }
+
+    if (!response.ok) {
+        let message = `请求失败 ${response.status}`;
+        try { const data = await response.json(); message = data.error || message; } catch (e) {}
+        handlers.onError && handlers.onError(message);
+        return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let index;
+        while ((index = buffer.indexOf('\n\n')) >= 0) {
+            const raw = buffer.slice(0, index).trim();
+            buffer = buffer.slice(index + 2);
+            if (!raw.startsWith('data:')) continue;
+            let payload;
+            try { payload = JSON.parse(raw.slice(5).trim()); } catch (e) { continue; }
+            if (payload.type === 'status' && handlers.onStatus) handlers.onStatus(payload.message);
+            else if (payload.type === 'delta' && handlers.onDelta) handlers.onDelta(payload.text);
+            else if (payload.type === 'done' && handlers.onDone) handlers.onDone(payload);
+            else if (payload.type === 'error' && handlers.onError) handlers.onError(payload.error);
+        }
+    }
+}
+
+// ==================================================================== 摘要
+const SECTION_ICONS = [
+    [/背景|引言|绪论|abstract|introduction|background/i, 'fa-info-circle'],
+    [/方法|method|approach|model/i, 'fa-flask'],
+    [/结果|实验|result|experiment|evaluation/i, 'fa-bar-chart'],
+    [/结论|讨论|总结|conclusion|discussion/i, 'fa-lightbulb-o'],
+    [/关键词|keyword/i, 'fa-tags'],
+];
+
+function sectionIcon(title) {
+    for (const [pattern, icon] of SECTION_ICONS) if (pattern.test(title)) return icon;
+    return 'fa-file-text-o';
+}
+
+function splitSections(text) {
+    const sections = [];
+    let current = null;
+    for (const line of text.split('\n')) {
+        const match = line.match(/^\s*#{1,4}\s*(.+?)\s*$/);
+        if (match) {
+            current = { title: match[1].replace(/[*#]/g, '').trim(), body: [] };
+            sections.push(current);
+        } else if (current) {
+            current.body.push(line);
+        } else if (line.trim()) {
+            current = { title: '摘要', body: [line] };
+            sections.push(current);
+        }
+    }
+    return sections.map((s) => ({ title: s.title, body: s.body.join('\n').trim() }))
+                   .filter((s) => s.body || /关键词/.test(s.title));
+}
+
+// 当前摘要原文，导出 Word / Markdown 时原样提交给后端
+let currentSummaryText = '';
+let currentSummaryMeta = null;
+
+function renderSummary(text, meta) {
+    const container = $('summary-content');
+    const sections = splitSections(text);
+
+    if (!sections.length) {
+        container.innerHTML = `<p class="text-xs text-gray-500 whitespace-pre-wrap">${renderRich(text)}</p>`;
+        return;
+    }
+
+    let html = '';
+    for (const section of sections) {
+        const icon = sectionIcon(section.title);
+        let body;
+        if (/关键词|keyword/i.test(section.title)) {
+            body = section.body.split(/[、,，;；\n]/).filter(Boolean).map((word) =>
+                `<span class="inline-block px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full mr-1 mb-1">${escapeHtml(word.trim())}</span>`
+            ).join('');
+        } else {
+            body = `<p class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">${renderRich(section.body)}</p>`;
+        }
+        html += `<div class="bg-neutral rounded-lg p-3">
+            <h4 class="text-sm font-medium mb-2 flex items-center">
+                <i class="fa ${icon} text-primary mr-1.5"></i>${escapeHtml(section.title)}
+            </h4>${body}</div>`;
+    }
+
+    if (meta) {
+        html += `<div class="text-xs text-gray-400 text-right">
+            ${meta.source === 'openai' ? 'AI 生成' : escapeHtml(meta.source || '')}
+            ${meta.model ? ' · ' + escapeHtml(meta.model) : ''}
+            ${meta.citations && meta.citations.length ? ' · 引用页码：' + meta.citations.map(p => 'p.' + p).join(' ') : ''}
+        </div>`;
+        html += invalidCitationNote(meta.invalid_citations);
+    }
+    container.innerHTML = html;
+}
+
+async function loadSummary() {
+    if (!currentDocumentId) { alert('请先选择一篇文献'); return; }
+    const docId = currentDocumentId;
+    const container = $('summary-content');
+    container.innerHTML = `<div class="flex items-center text-sm text-gray-500 p-4">
+        <i class="fa fa-spinner fa-spin mr-2"></i><span id="summary-status">准备中…</span></div>`;
+
+    currentSummaryText = '';
+    currentSummaryMeta = null;
+    syncExportButtons();
+
+    let accumulated = '';
+    await streamRequest(`/api/documents/${docId}/summary/stream`, {
+        onStatus: (message) => {
+            const node = $('summary-status');
+            if (node) node.textContent = message;
+        },
+        onDelta: (piece) => {
+            if (currentDocumentId !== docId) return;
+            accumulated += piece;
+            renderSummary(accumulated + ' ▌', null);
+        },
+        onDone: (payload) => {
+            if (currentDocumentId !== docId) return;
+            const finalText = typeof payload.text === 'string' ? payload.text : accumulated;
+            renderSummary(finalText, payload);
+            currentSummaryText = finalText.trim();
+            currentSummaryMeta = payload || null;
+            syncExportButtons();
+        },
+        onError: (message) => {
+            if (currentDocumentId !== docId) return;
+            container.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3">
+                <h4 class="text-sm font-medium mb-1 text-red-600"><i class="fa fa-exclamation-circle mr-1"></i>生成失败</h4>
+                <p class="text-xs text-red-700">${escapeHtml(message)}</p></div>`;
+        },
+    });
+}
+
+// ==================================================================== 问答
+const QA_HISTORY = [];
+// 最近几轮问答的摘要，随下一次提问发给后端，用于理解「还有呢」这类追问
+const QA_CONTEXT = [];
+// 完整问答记录（含出处和参考原文），供导出使用
+const QA_TRANSCRIPT = [];
+
+function rememberQaTurn(question, answer, pages) {
+    const text = String(answer || '').trim();
+    if (!text) return;
+    QA_CONTEXT.push({
+        q: question,
+        a: text.slice(0, 500),
+        pages: (pages || []).slice(0, 8),
+    });
+    if (QA_CONTEXT.length > 12) QA_CONTEXT.splice(0, QA_CONTEXT.length - 12);
+}
+
+function qaBubble(role, html, extraClass) {
+    const isUser = role === 'user';
+    const avatar = isUser
+        ? `<div class="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center flex-shrink-0 text-xs">我</div>`
+        : `<div class="w-6 h-6 rounded-full bg-secondary text-white flex items-center justify-center flex-shrink-0"><i class="fa fa-robot text-xs"></i></div>`;
+    return `<div class="flex items-start space-x-2">
+        ${avatar}
+        <div class="${isUser ? 'bg-neutral' : 'bg-white border border-gray-200'} rounded-lg p-3 max-w-[85%] ${extraClass || ''}">
+            ${html}
+        </div></div>`;
+}
+
+function passagesHtml(passages) {
+    if (!passages || !passages.length) return '';
+    return `<div class="mt-2 pt-2 border-t border-gray-100">
+        <p class="text-[11px] font-medium text-gray-500 mb-1">参考原文（点击页码跳转）</p>
+        ${passages.map((p) => `
+            <div class="mb-1.5">
+                <button class="cite-chip" data-page="${p.page}">p.${p.page}</button>
+                ${p.section ? `<span class="text-[11px] text-gray-500">${escapeHtml(p.section)}</span>` : ''}
+                <p class="text-[11px] text-gray-500 leading-snug mt-0.5">${escapeHtml(p.text.slice(0, 160))}…</p>
+            </div>`).join('')}
+    </div>`;
+}
+
+async function sendQuestion() {
+    const input = $('qa-input');
+    const question = input.value.trim();
+    if (!question) return;
+    if (!currentDocumentId) { alert('请先选择一篇文献'); return; }
+    // 跳页 / 标记 / 导出不依赖向量索引，索引没建好也能用
+    const command = parseCommand(question);
+    const editLike = !command && looksLikeEditCommand(question);
+    const followUp = !command && lastCommand && isFollowUpComplaint(question);
+    const natural = !command && (looksLikeNaturalCommand(question) || editLike || followUp);
+    if (!hasIndex && !command && !natural) { alert('这篇文献的索引还没建好（左侧有进度条），稍等一下再问'); return; }
+
+    const messages = $('qa-messages');
+    if (!QA_HISTORY.length) messages.innerHTML = '';
+    messages.insertAdjacentHTML('beforeend', qaBubble('user', `<p class="text-xs text-gray-700">${escapeHtml(question)}</p>`));
+    QA_HISTORY.push(question);
+    input.value = '';
+
+    const answerId = 'answer-' + Date.now();
+    messages.insertAdjacentHTML('beforeend', qaBubble('ai',
+        `<p class="text-xs text-gray-400 cursor-blink" id="${answerId}">正在检索文献片段…</p>`));
+    messages.scrollTop = messages.scrollHeight;
+
+    // 跳页 / 标记 / 导出这类指令本地执行，不花大模型调用，也不会被检索结果干扰
+    if (command) {
+        const placeholder = $(answerId);
+        if (placeholder) placeholder.textContent = '正在执行指令…';
+        await runCommand(command, answerId);
+        messages.scrollTop = messages.scrollHeight;
+        return;
+    }
+
+    // 本地没听懂但看起来是指令：交给大模型解析（只发指令本身，不发文献正文）
+    if (natural) {
+        const placeholder = $(answerId);
+
+        // 「怎么还是红的」「标记还在」：接着上一条指令的位置，把残留记录清干净
+        if (followUp) {
+            const page = lastCommand.page;
+            const paragraph = lastCommand.paragraph || 1;
+            const isEdit = lastCommand.type === 'unedit' || lastCommand.type === 'edit';
+            const source = isEdit ? currentEdits : currentMarks;
+            const hits = source.filter((item) => item.page === page &&
+                (item.paragraph || 1) === paragraph);
+            try {
+                let data = {};
+                for (const target of hits) {
+                    const response = await apiFetch(
+                        `/api/documents/${currentDocumentId}/${isEdit ? 'edits' : 'marks'}/${target.id}`,
+                        { method: 'DELETE', headers: authHeaders() });
+                    data = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(data.error || '取消失败');
+                }
+                if (data.marks) currentMarks = data.marks;
+                if (data.edits) currentEdits = data.edits;
+                currentPdfVersion = data.version || String(Date.now());
+                renderMarks();
+                reloadPdf(page);
+                if (placeholder) {
+                    placeholder.classList.remove('cursor-blink', 'text-gray-400');
+                    placeholder.className = 'text-xs text-gray-700 leading-relaxed';
+                    placeholder.innerHTML = hits.length
+                        ? `又把 ${markWhere(page, paragraph)} 剩余的 <b>${hits.length}</b> 条${isEdit ? '修改' : '标记'}清掉了，PDF 已重新加载。`
+                        : `记录里已经没有 ${markWhere(page, paragraph)} 的${isEdit ? '修改' : '标记'}了。PDF 已重新加载；如果还显示红色，请按 Ctrl+F5 强制刷新页面。`;
+                }
+            } catch (error) {
+                if (placeholder) {
+                    placeholder.classList.remove('cursor-blink', 'text-gray-400');
+                    placeholder.className = 'text-xs text-red-600';
+                    placeholder.textContent = '清理残留记录失败：' + error.message;
+                }
+            }
+            messages.scrollTop = messages.scrollHeight;
+            return;
+        }
+
+        if (placeholder) placeholder.textContent = '正在理解指令…';
+        let parsed = null;
+        let remoteError = '';
+        try {
+            parsed = await interpretCommandRemote(question);
+        } catch (error) {
+            remoteError = error.message;
+        }
+        if (parsed && parsed.type !== 'qa') {
+            await runCommand(parsed, answerId);
+            messages.scrollTop = messages.scrollHeight;
+            return;
+        }
+        if (!parsed) {
+            // 大模型不可用时退回本地提示，避免把指令丢给问答模型答非所问
+            if (placeholder) {
+                placeholder.classList.remove('cursor-blink', 'text-gray-400');
+                placeholder.className = 'text-xs text-gray-700 leading-relaxed';
+                placeholder.innerHTML = `这条指令我没能理解${remoteError ? `（${escapeHtml(remoteError)}）` : ''}。可以这样说：
+                    <br>· 取消第 3 页第 1 段的标记
+                    <br>· 把第 3 页第 1 段改成：新的文字
+                    <br>· 把第 3 页第 1 段改成红色黑体
+                    <br>· 撤销第 3 页第 1 段的修改
+                    <p class="mt-1 text-[11px] text-gray-400">
+                        目前支持原位改字、改颜色（红蓝绿黑橙紫灰）和字体（宋体/黑体/微软雅黑/楷体）；加粗、字号和重排暂不支持。</p>`;
+            }
+            messages.scrollTop = messages.scrollHeight;
+            return;
+        }
+        if (!hasIndex) {
+            if (placeholder) {
+                placeholder.className = 'text-xs text-red-600';
+                placeholder.textContent = '这篇文献的索引还没建好，暂时只能执行跳转、标记类操作。';
+            }
+            return;
+        }
+        if (placeholder) placeholder.textContent = '正在检索文献片段…';
+    }
+
+    let accumulated = '';
+    const node = () => $(answerId);
+    const history = QA_CONTEXT.slice(-8);
+    const docId = currentDocumentId;
+
+    await streamRequest(`/api/documents/${docId}/ask/stream`, {
+        onStatus: (message) => { const el = node(); if (el) el.textContent = message; },
+        onDelta: (piece) => {
+            accumulated += piece;
+            const el = node();
+            if (el) { el.classList.remove('cursor-blink', 'text-gray-400'); el.className = 'text-xs text-gray-700 leading-relaxed cursor-blink'; el.innerHTML = renderRich(accumulated); }
+            messages.scrollTop = messages.scrollHeight;
+        },
+        onDone: (payload) => {
+            if (currentDocumentId !== docId) return;
+            const finalText = typeof payload.text === 'string' ? payload.text : accumulated;
+            const el = node();
+            if (el) {
+                el.classList.remove('cursor-blink');
+                el.className = 'text-xs text-gray-700 leading-relaxed';
+                el.innerHTML = renderRich(finalText);
+                el.insertAdjacentHTML('afterend',
+                    invalidCitationNote(payload.invalid_citations) + passagesHtml(payload.passages));
+            }
+            // 记下这一轮，下一次「还有呢」「它的缺点」才能接得上
+            rememberQaTurn(question, finalText, payload.citations);
+            QA_TRANSCRIPT.push({
+                q: question,
+                a: finalText.trim(),
+                citations: payload.citations || [],
+                passages: payload.passages || [],
+            });
+            syncExportButtons();
+            messages.scrollTop = messages.scrollHeight;
+        },
+        onError: (message) => {
+            const el = node();
+            if (el) { el.className = 'text-xs text-red-600'; el.textContent = message; }
+        },
+    }, {
+        method: 'POST',
+        body: JSON.stringify({ question, history }),
+    });
+}
+
+// ==================================================================== 摘要 / 问答导出
+function setExportHint(kind, message, isError) {
+    const node = $(kind + '-export-hint');
+    if (!node) return;
+    node.textContent = message || '';
+    node.classList.toggle('hidden', !message);
+    node.classList.toggle('text-red-500', Boolean(message) && Boolean(isError));
+    node.classList.toggle('text-gray-400', !message || !isError);
+}
+
+function syncExportButtons() {
+    const summaryReady = Boolean(currentDocumentId) && Boolean((currentSummaryText || '').trim());
+    const qaReady = Boolean(currentDocumentId) && QA_TRANSCRIPT.length > 0;
+    ['summary-export-docx', 'summary-export-md'].forEach((id) => {
+        const button = $(id);
+        if (button) button.disabled = !summaryReady;
+    });
+    ['qa-export-docx', 'qa-export-md'].forEach((id) => {
+        const button = $(id);
+        if (button) button.disabled = !qaReady;
+    });
+}
+
+async function exportPanel(kind, format) {
+    if (!currentDocumentId) return;
+    const isSummary = kind === 'summary';
+    const label = isSummary ? '摘要' : '问答记录';
+    const formatName = format === 'docx' ? 'Word' : 'Markdown';
+
+    if (isSummary && !(currentSummaryText || '').trim()) {
+        setExportHint(kind, '先生成一次摘要再导出', true);
+        return;
+    }
+    if (!isSummary && !QA_TRANSCRIPT.length) {
+        setExportHint(kind, '还没有问答记录，先提一个问题', true);
+        return;
+    }
+
+    const payload = { kind, format };
+    if (isSummary) {
+        payload.summary = {
+            text: currentSummaryText,
+            model: (currentSummaryMeta && currentSummaryMeta.model) || '',
+            citations: (currentSummaryMeta && currentSummaryMeta.citations) || [],
+        };
+    } else {
+        payload.turns = QA_TRANSCRIPT;
+    }
+
+    const ids = isSummary
+        ? ['summary-export-docx', 'summary-export-md']
+        : ['qa-export-docx', 'qa-export-md'];
+    ids.forEach((id) => { const button = $(id); if (button) button.disabled = true; });
+    setExportHint(kind, `正在生成 ${formatName}…`, false);
+
+    try {
+        const response = await apiFetch(`/api/documents/${currentDocumentId}/export`, {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+            let message = `导出失败 ${response.status}`;
+            try { const data = await response.json(); message = data.error || message; } catch (error) {}
+            throw new Error(message);
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const stem = (currentFilename || '文献').replace(/\.[^.]+$/, '') || '文献';
+        link.download = `${stem}_${label}.${format === 'docx' ? 'docx' : 'md'}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setExportHint(kind, `已导出${label}（${formatName}）`, false);
+        setTimeout(() => setExportHint(kind, '', false), 4000);
+    } catch (error) {
+        setExportHint(kind, '导出失败：' + error.message, true);
+    } finally {
+        syncExportButtons();
+    }
+}
+
+// ==================================================================== 翻译
+async function translateText() {
+    const input = $('translate-input');
+    const text = input.value.trim();
+    if (!text) return;
+    const [sourceLang, targetLang] = $('lang-select').value.split('-');
+    const history = $('translation-history');
+    const id = 'tr-' + Date.now();
+    history.insertAdjacentHTML('afterbegin', `
+        <div class="bg-white border border-gray-200 rounded-lg p-3" id="${id}">
+            <p class="text-[11px] text-gray-500 mb-1">原文</p>
+            <p class="text-xs text-gray-700 mb-2">${escapeHtml(text)}</p>
+            <p class="text-[11px] text-gray-500 mb-1">译文</p>
+            <p class="text-xs text-gray-800 cursor-blink" id="${id}-out">翻译中…</p>
+        </div>`);
+    input.value = '';
+
+    let accumulated = '';
+    await streamRequest(`/api/translate/stream?text=${encodeURIComponent(text)}&source_lang=${sourceLang}&target_lang=${targetLang}`, {
+        onDelta: (piece) => { accumulated += piece; const el = $(id + '-out'); if (el) el.textContent = accumulated; },
+        onDone: () => { const el = $(id + '-out'); if (el) el.classList.remove('cursor-blink'); },
+        onError: (message) => { const el = $(id + '-out'); if (el) { el.classList.remove('cursor-blink'); el.className = 'text-xs text-red-600'; el.textContent = message; } },
+    });
+}
+
+// ==================================================================== 上传
+function uploadFile(file) {
+    if (!ALLOWED_EXTENSIONS.includes(fileExtension(file.name))) {
+        alert('只支持这些格式：PDF、Word(.docx)、Markdown(.md)、纯文本(.txt)\n注意：老版 .doc 不受支持，请另存为 .docx');
+        return;
+    }
+    if (!currentDocumentId && !getToken()) { showAuth(); return; }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE}/api/upload`);
+    const token = getToken();
+    if (token) xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+
+    const area = $('upload-area');
+    const original = area.innerHTML;
+    area.innerHTML = `<i class="fa fa-spinner fa-spin text-2xl text-primary mb-1"></i>
+        <p class="text-xs text-gray-600">正在上传并解析 PDF…</p>`;
+
+    xhr.addEventListener('load', async () => {
+        area.innerHTML = original;
+        bindUploadEvents();
+        if (xhr.status === 401) { showAuth('请先登录'); return; }
+        let data = {};
+        try { data = JSON.parse(xhr.responseText); } catch (e) {}
+        if (xhr.status === 200 && data.success) {
+            await loadDocuments();
+            const doc = data.document;
+            selectDocument(doc);
+        } else {
+            alert('上传失败：' + (data.error || ('HTTP ' + xhr.status)));
+        }
+    });
+    xhr.addEventListener('error', () => {
+        area.innerHTML = original;
+        bindUploadEvents();
+        alert('网络错误，请确认后端服务正在运行');
+    });
+    xhr.send(formData);
+}
+
+// ==================================================================== 事件绑定
+function bindUploadEvents() {
+    const area = $('upload-area');
+    const input = $('file-input');
+    area.onclick = () => input.click();
+    input.onchange = () => { if (input.files.length) { uploadFile(input.files[0]); input.value = ''; } };
+    area.ondragover = (event) => { event.preventDefault(); area.classList.add('border-primary'); };
+    area.ondragleave = () => area.classList.remove('border-primary');
+    area.ondrop = (event) => {
+        event.preventDefault();
+        area.classList.remove('border-primary');
+        if (event.dataTransfer.files.length) uploadFile(event.dataTransfer.files[0]);
+    };
+}
+
+function switchTab(name) {
+    document.querySelectorAll('.tab-btn').forEach((button) => {
+        const active = button.dataset.tab === name;
+        button.className = 'tab-btn flex-1 py-3 text-sm font-medium ' +
+            (active ? 'text-primary border-b-2 border-primary' : 'text-gray-500 hover:text-primary');
+    });
+    ['summary', 'qa', 'translate'].forEach((key) => {
+        $('panel-' + key).classList.toggle('hidden', key !== name);
+        if (key === 'qa') $('panel-' + key).classList.toggle('flex', key === name);
+    });
+}
+
+// ★ 背景动画总速度：想让背景更快就把它改小（0.6 明显更快，1.5 更慢），改完刷新页面即可
+const BG_SPEED = 1;
+
+// 每次打开时给背景各层重新掷一次骰子：周期与起始相位都随机，
+// 这样每次刷新看到的编排都不一样，不会觉得是同一段循环在重播。
+function randomizeBackground() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    document.querySelectorAll('.aurora-base, .sweep, .orb, .ribbon').forEach((node) => {
+        const base = parseFloat(getComputedStyle(node).animationDuration);
+        if (!base || Number.isNaN(base)) return;
+        const duration = base * BG_SPEED * (0.72 + Math.random() * 0.62);  // 各快各慢，约 ±30%
+        node.style.animationDuration = duration.toFixed(2) + 's';
+        node.style.animationDelay = (-Math.random() * duration).toFixed(2) + 's';
+    });
+}
+
+// ==================================================================== 标记导出按钮
+function bindMarkEvents() {
+    const button = $('export-marks');
+    if (button) {
+        button.addEventListener('click', async () => {
+            const result = await exportMarks();
+            if (!result.ok) alert('导出失败：' + result.message);
+            else $('pdf-page-hint').textContent = '标记已导出为 Word';
+        });
+    }
+
+    const importButton = $('import-highlights');
+    const importInput = $('import-highlights-input');
+    if (!importButton || !importInput) return;
+
+    importButton.addEventListener('click', () => {
+        if (!currentDocumentId) { alert('请先选择一篇文献'); return; }
+        $('pdf-page-hint').textContent = '先在 Edge 里 Ctrl+S「另存为」带高亮的 PDF，再选择它';
+        importInput.click();
+    });
+
+    importInput.addEventListener('change', async () => {
+        const file = importInput.files && importInput.files[0];
+        importInput.value = '';
+        if (!file) return;
+        $('pdf-page-hint').textContent = '正在读取高亮…';
+        const result = await importHighlights(file);
+        if (!result.ok) {
+            $('pdf-page-hint').textContent = '导入失败';
+            alert('导入高亮失败：' + result.message);
+            return;
+        }
+        const { imported = 0, skipped = 0, annotations = 0 } = result.data;
+        let message;
+        if (imported) {
+            message = `已导入手动高亮 ${imported} 条${skipped ? `，跳过 ${skipped} 条` : ''}，导出 Word 会一起带上`;
+        } else if (annotations) {
+            message = `识别到 ${annotations} 处高亮，但对应段落都已经有标记了`;
+        } else {
+            message = '这份 PDF 里没检测到高亮/下划线注释';
+        }
+        $('pdf-page-hint').textContent = message;
+    });
+}
+
+bindMarkEvents();
+bindLibraryEvents();
+bindLibraryAssistant();
+
+// 全局委托：所有 .cite-chip 点击都跳到对应页
+document.addEventListener('click', (event) => {
+    const chip = event.target.closest('.cite-chip');
+    if (chip) openPage(parseInt(chip.dataset.page, 10));
+});
+
+document.addEventListener('DOMContentLoaded', async () => {
+    bindUploadEvents();
+    document.querySelectorAll('.tab-btn').forEach((button) => {
+        button.addEventListener('click', () => switchTab(button.dataset.tab));
+    });
+    $('mode-login').addEventListener('click', () => setAuthMode('login'));
+    $('mode-register').addEventListener('click', () => setAuthMode('register'));
+    $('auth-submit').addEventListener('click', submitAuth);
+    $('auth-password').addEventListener('keypress', (event) => { if (event.key === 'Enter') submitAuth(); });
+    $('auth-username').addEventListener('keypress', (event) => { if (event.key === 'Enter') submitAuth(); });
+    $('logout-btn').addEventListener('click', logout);
+    $('change-pwd-btn').addEventListener('click', openPasswordModal);
+    $('pwd-close').addEventListener('click', closePasswordModal);
+    $('pwd-cancel').addEventListener('click', closePasswordModal);
+    $('pwd-submit').addEventListener('click', submitPasswordChange);
+    $('pwd-confirm').addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') submitPasswordChange();
+    });
+    $('pwd-modal').addEventListener('click', (event) => {
+        if (event.target === $('pwd-modal')) closePasswordModal();
+    });
+    $('generate-summary').addEventListener('click', loadSummary);
+    $('qa-send').addEventListener('click', sendQuestion);
+    $('qa-input').addEventListener('keypress', (event) => { if (event.key === 'Enter') sendQuestion(); });
+    $('clear-history').addEventListener('click', () => {
+        QA_HISTORY.length = 0;
+        QA_CONTEXT.length = 0;
+        QA_TRANSCRIPT.length = 0;
+        setExportHint('qa', '', false);
+        syncExportButtons();
+        $('qa-messages').innerHTML = `<div class="text-center text-gray-400 text-xs py-4">
+        提问，或直接下指令：<br>「标记第 3 页第 1 段」「把第 3 页第 1 段改成：新文字」「跳到第 5 页」</div>`;
+    });
+    $('summary-export-docx').addEventListener('click', () => exportPanel('summary', 'docx'));
+    $('summary-export-md').addEventListener('click', () => exportPanel('summary', 'md'));
+    $('qa-export-docx').addEventListener('click', () => exportPanel('qa', 'docx'));
+    $('qa-export-md').addEventListener('click', () => exportPanel('qa', 'md'));
+    $('translate-btn').addEventListener('click', translateText);
+    $('toggle-pdf').addEventListener('click', () => {
+        const panel = $('pdf-panel');
+        panel.classList.toggle('hidden');
+        panel.classList.toggle('flex');
+        if (!panel.classList.contains('hidden') && currentDocumentId) showPreview(currentPage || 1);
+    });
+
+    // 文献库管理
+    $('document-list').addEventListener('click', onDocumentListClick);
+    $('document-list').addEventListener('change', onDocumentListChange);
+    $('doc-filter').addEventListener('input', () => {
+        $('doc-filter-clear').classList.toggle('hidden', !$('doc-filter').value);
+        renderDocumentList();
+    });
+    $('doc-filter-clear').addEventListener('click', () => {
+        $('doc-filter').value = '';
+        $('doc-filter-clear').classList.add('hidden');
+        renderDocumentList();
+    });
+    $('category-filter').addEventListener('change', renderDocumentList);
+    $('tag-filter').addEventListener('change', renderDocumentList);
+    $('manage-toggle').addEventListener('click', () => setManagingDocs(!managingDocs));
+    $('batch-exit').addEventListener('click', () => setManagingDocs(false));
+    $('batch-delete').addEventListener('click', deleteSelectedDocuments);
+    $('batch-all').addEventListener('change', () => {
+        const visible = filteredDocuments();
+        if ($('batch-all').checked) visible.forEach((doc) => selectedDocs.add(doc.id));
+        else visible.forEach((doc) => selectedDocs.delete(doc.id));
+        renderDocumentList();
+    });
+
+    // 阅读进度 / 页码跳转
+    $('page-prev').addEventListener('click', () => openPage(Math.max(1, currentPage - 1)));
+    $('page-next').addEventListener('click', () => {
+        const next = currentPage + 1;
+        openPage(currentPageCount ? Math.min(currentPageCount, next) : next);
+    });
+    $('page-input').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') { event.preventDefault(); jumpToInputPage(); }
+    });
+    $('page-input').addEventListener('change', jumpToInputPage);
+
+    // 编辑文献信息
+    $('meta-close').addEventListener('click', closeDocMeta);
+    $('meta-cancel').addEventListener('click', closeDocMeta);
+    $('meta-save').addEventListener('click', saveDocMeta);
+    $('doc-meta-modal').addEventListener('click', (event) => {
+        if (event.target === $('doc-meta-modal')) closeDocMeta();
+    });
+
+    setAuthMode('login');
+    resetPanels();
+    randomizeBackground();
+
+    // 有令牌就先试着自动登录
+    if (getToken()) {
+        try {
+            const response = await fetch(`${API_BASE}/api/auth/me`, { headers: authHeaders() });
+            if (response.ok) {
+                const data = await response.json();
+                startApp(data.user);
+                return;
+            }
+        } catch (error) { /* 后端没起 */ }
+        setToken('');
+    }
+    showAuth();
+});
+</script>
+</body>
+</html>

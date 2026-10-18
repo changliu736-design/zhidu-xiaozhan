@@ -1,0 +1,39 @@
+# 智读小站后端依赖
+#
+# 安装：在 backend 目录执行
+#     pip install -r requirements.txt
+#
+# 注意 torch 的安装方式：
+#   默认这条命令装到的是 CPU 版 torch，本地建索引会很慢（一篇 100 段的论文要十几分钟）。
+#   如果机器上有 NVIDIA 显卡，建议装 CUDA 版，建索引能从十几分钟降到几秒：
+#     pip install torch --index-url https://download.pytorch.org/whl/cu128
+#   装完用 python -c "import torch;print(torch.cuda.is_available())" 应输出 True。
+#   程序会自动检测：有显卡就用显卡，没有就退回 CPU，不需要改代码。
+
+flask>=2.0.1
+flask-cors>=3.0.10
+python-dotenv>=0.19.0
+openai>=1.0.0
+
+# 账号与会话（密码哈希 + 会话签名）
+bcrypt>=4.0.0
+itsdangerous>=2.0.0
+
+# 文档解析
+#   PyMuPDF  —— 按页提取 PDF 文字，才能给出"第几页"的出处
+#   python-docx —— 读 .docx 的段落、标题样式和表格
+PyMuPDF>=1.23.0
+python-docx>=1.0.0
+
+# 扫描件 OCR（图片型 PDF）
+#   rapidocr + onnxruntime —— 纯 ONNX 推理，不依赖 PaddlePaddle；
+#   模型随 rapidocr 包安装，运行时不需要联网下载。
+rapidocr>=3.10.0
+onnxruntime>=1.31.0
+
+# 语义检索
+sentence-transformers>=2.2.0
+transformers>=4.8.2
+faiss-cpu>=1.7.1
+torch>=1.9.0
+numpy>=1.21.0

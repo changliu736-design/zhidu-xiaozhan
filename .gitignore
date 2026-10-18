@@ -1,0 +1,28 @@
+# 密钥与运行时数据（绝不能提交）
+backend/.env
+backend/data/
+backend/uploads/
+*.log
+*.log.*
+audit.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# 模型文件（体积大，按 README 自行下载）
+models/
+*.safetensors
+*.gguf
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 与项目无关的本地磁盘扫描结果
+_dscan/
