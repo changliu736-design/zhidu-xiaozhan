@@ -153,13 +153,24 @@ MAX_CONTENT_LENGTH = int(float(os.getenv("MAX_CONTENT_LENGTH_MB") or "50")
 
 # ---------------------------------------------------------------- OCR
 # 扫描件/图片型 PDF：某页提取到的文字少于阈值、且页面上有图片时，
-# 先用 RapidOCR 识别该页，再进入正常分块与索引流程。
+# 把这页渲染成图片交给云端多模态模型（阿里云百炼 qwen-vl-ocr）识别，
+# 再进入正常分块与索引流程。不依赖本地推理框架，2核2G 服务器也能开。
 # 普通文字 PDF 不会走 OCR；混合型 PDF 只 OCR 文字过少的页。
+# 隐私提示：开了 OCR 后，被判为扫描页的图片会上传到百炼（纯文字 PDF 不上传）。
 OCR_ENABLED = os.getenv("OCR_ENABLED", "1").strip().lower() not in (
     "0", "false", "no", "off")
+OCR_API_BASE_URL = (os.getenv("OCR_API_BASE_URL")
+                    or "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
+# 不单独填就复用百炼的 key（EMBEDDING_API_KEY），再退回 OPENAI_API_KEY
+OCR_API_KEY = (os.getenv("OCR_API_KEY")
+               or os.getenv("EMBEDDING_API_KEY")
+               or os.getenv("OPENAI_API_KEY")
+               or "").strip()
+OCR_API_MODEL = (os.getenv("OCR_API_MODEL") or "qwen-vl-ocr").strip()
+OCR_API_TIMEOUT = float(os.getenv("OCR_API_TIMEOUT") or "60")
+OCR_API_RETRIES = int(os.getenv("OCR_API_RETRIES") or "2")
 OCR_MIN_PAGE_CHARS = int(os.getenv("OCR_MIN_PAGE_CHARS", "40"))
 OCR_DPI = int(os.getenv("OCR_DPI", "200"))
-OCR_SCORE_THRESHOLD = float(os.getenv("OCR_SCORE_THRESHOLD", "0.5"))
 OCR_MAX_PAGES = int(os.getenv("OCR_MAX_PAGES", "0"))  # 0 表示不限制
 
 # ---------------------------------------------------------------- 管理后台

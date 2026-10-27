@@ -198,7 +198,8 @@ python app.py
 | 页面顶部显示「模型未加载」 | 本机 HuggingFace 缓存里没有 `Qwen/Qwen3-Embedding-0.6B`，需要先联网下载一次模型 |
 | 左侧文献一直显示「建立索引」且很慢 | 正在用 CPU 跑向量模型。装 CUDA 版 torch 可提速约 200 倍 |
 | 摘要/问答提示「大模型不可用」 | `backend/.env` 没配好 API Key，或 Key 失效 |
-| 上传提示「提取不到有效文字」 | 这张 PDF 是扫描件（图片型），需要先做 OCR |
+| 上传提示「提取不到有效文字」 | 这张 PDF 是扫描件（图片型）。确认 `backend/.env` 里 `OCR_ENABLED=1` 且百炼的 key 可用；认不出时看服务日志里的 `[OCR]` 那一行 |
+| 扫描件认字失败 / 报 OCR 错误 | 云端 OCR 需要能访问百炼。日志里会写「云端 OCR 调用失败（已重试 N 次）」加真实错误，据此换 key 或改 `OCR_API_MODEL` |
 | 上传 `.doc` 被拒绝 | 只支持新版 `.docx`。老版 `.doc` 是二进制格式，请用 Word 另存为 `.docx` |
 | 登录页背景动得太快/太慢 | 改 `index.html` 里的 `BG_SPEED`：0.6 更快，1.5 更慢，改完刷新即可 |
 | 想重新体验首次注册流程 | 先停服务，执行 `python tests/reset_state.py` 看预演，确认后加 `--force`（⚠️ 会删掉现有账号） |
@@ -259,21 +260,21 @@ python tests/test_render.py       # 前端引用渲染逻辑单测（需要 node
 ```mermaid
 flowchart LR
     A["上传 PDF / DOCX / MD / TXT"] --> B["页面解析"]
-    B -->|扫描页| C["RapidOCR"]
+    B -->|扫描页| C["qwen-vl-ocr 云端识图"]
     B --> D["按页 / 章节分块"]
     C --> D
-    D --> E["Qwen3-Embedding + FAISS"]
+    D --> E["text-embedding-v3 + FAISS"]
     D --> F["BM25"]
     E --> G["混合检索"]
     F --> G
-    G --> H["bge-reranker 重排"]
+    G --> H["gte-rerank-v2 重排"]
     H --> I["DeepSeek 生成"]
     I --> J["带页码出处的答案"]
 ```
 
 - **检索链路**：PDF 按页解析 → 带页码分块 → 向量索引（FAISS，默认调百炼 text-embedding-v3，也可本地跑 Qwen3-Embedding）+ BM25 → 精排（默认百炼 gte-rerank-v2，也可本地跑 bge-reranker）→ 带出处生成
 - **两套部署形态**：全 API（2 核 2G 云服务器够用，镜像小、启动快）／本地模型（离线、零 API 费用，需要内存与显卡）
-- **扫描件兜底**：RapidOCR 自动补齐图片页文字，OCR 开关与阈值可配置
+- **扫描件兜底**：图片型页面自动调云端多模态模型（百炼 `qwen-vl-ocr`）识图，复用百炼的 key，服务器不装任何本地推理框架；`OCR_ENABLED=0` 可整体关掉
 - **流式输出**：摘要、问答、翻译均走 SSE，前端边收边渲染
 - **读文献的顺手功能**：划词解读/翻译（沿用检索与出处校验）、四种参考文献格式、星标/分类/标签分组、每用户每日额度（`cite.py` + `quota.py`）
 - **鉴权**：bcrypt 密码哈希 + itsdangerous 签名令牌；封禁后旧令牌在下一次请求即失效

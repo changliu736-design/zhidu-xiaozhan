@@ -1883,7 +1883,7 @@ def warmup():
     reranker = get_reranker()
     print(f"[重排] 就绪={reranker.load()} 设备={reranker.device} 错误={reranker.error}")
     ocr_ready = ocr.load()
-    print(f"[OCR] 就绪={ocr_ready} 引擎=RapidOCR 错误={ocr.status()['error']}")
+    print(f"[OCR] 就绪={ocr_ready} 引擎={ocr.status()['engine']} 错误={ocr.status()['error']}")
 
 
 if __name__ == "__main__":

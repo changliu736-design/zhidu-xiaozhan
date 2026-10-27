@@ -4,18 +4,22 @@
 用法（在 backend 目录下）：
     python check_api.py
 
-依次测三个接口：
+依次测四个接口：
     1. 生成模型 —— 回答问题时用（DeepSeek 等）
     2. 向量模型 —— 上传文献建索引时用（阿里云百炼 text-embedding-v3）
     3. 重排模型 —— 检索后精排（阿里云百炼 gte-rerank-v2，可选）
+    4. 扫描件识别 —— 图片型 PDF 才用到（阿里云百炼 qwen-vl-ocr，可选）
 
 每项几厘钱，跑完会打印 ✓ / ✗ 和耗时。
 哪项没过，按它的提示改 backend/.env，再跑一次即可。
 """
 import sys
 import time
+from pathlib import Path
 
 import config
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def _ok(message: str) -> None:
@@ -28,7 +32,7 @@ def _bad(message: str) -> None:
 
 # ------------------------------------------------------------------ 1. 生成模型
 def check_llm() -> bool:
-    print("\n[1/3] 生成模型（回答问题用）")
+    print("\n[1/4] 生成模型（回答问题用）")
     print(f"  接口：{config.OPENAI_BASE_URL}")
     print(f"  模型：{config.OPENAI_MODEL}")
     if not config.OPENAI_API_KEY:
@@ -56,7 +60,7 @@ def check_llm() -> bool:
 
 # ------------------------------------------------------------------ 2. 向量模型
 def check_embedding() -> bool:
-    print("\n[2/3] 向量模型（上传文献建索引用）")
+    print("\n[2/4] 向量模型（上传文献建索引用）")
     print(f"  模式：{config.EMBEDDING_MODE}")
     print(f"  模型：{config.EMBEDDING_MODEL_NAME}")
     if config.EMBEDDING_MODE == "api":
@@ -86,7 +90,7 @@ def check_embedding() -> bool:
 
 # ------------------------------------------------------------------ 3. 重排模型
 def check_rerank() -> bool:
-    print("\n[3/3] 重排模型（检索后精排，可选）")
+    print("\n[3/4] 重排模型（检索后精排，可选）")
     import reranker
     service = reranker.get_reranker()
     service.load()
@@ -125,12 +129,53 @@ def check_rerank() -> bool:
     return False
 
 
+# ------------------------------------------------------------------ 4. 扫描件识别
+def check_ocr() -> bool:
+    print("\n[4/4] 扫描件识别（图片型 PDF 才用到，可选）")
+    import ocr
+
+    status = ocr.status()
+    print(f"  引擎：{status['engine']}")
+    ok, reason = ocr.available()
+    if not ok:
+        print(f"  [跳过] {reason} —— 有文字层的 PDF 不受影响")
+        return True
+
+    sample = ROOT / "samples" / "lightrag_demo.pdf"
+    if not sample.exists():
+        print(f"  [跳过] 没找到示例文件 {sample}，没法实测")
+        return True
+
+    # 示例论文的第 8 页是纯图片扫描页，正好拿来试
+    import fitz
+
+    with fitz.open(sample) as doc:
+        index = min(7, doc.page_count - 1)
+        png = doc.load_page(index).get_pixmap(dpi=config.OCR_DPI).tobytes("png")
+    print(f"  测试图片：{sample.name} 第 {index + 1} 页（{len(png) // 1024} KB）")
+
+    started = time.time()
+    try:
+        text = ocr.recognize(png)
+    except Exception as exc:  # noqa: BLE001
+        _bad(f"{type(exc).__name__}: {exc}")
+        return False
+
+    elapsed = time.time() - started
+    if not text.strip():
+        _bad(f"用时 {elapsed:.1f}s，接口通了但没识别出文字 —— 检查 OCR_API_MODEL 是否是视觉模型")
+        return False
+    preview = " / ".join(text.splitlines()[:2])[:60]
+    _ok(f"用时 {elapsed:.1f}s，识别出 {len(text)} 字：{preview}")
+    return True
+
+
 def main() -> int:
     print("=" * 58)
     print("智读小站 —— 模型接口自检")
     print("=" * 58)
 
-    results = [check_llm(), check_embedding(), check_rerank()]
+    results = [check_llm(), check_embedding(), check_rerank(), check_ocr()]
 
     print("\n" + "=" * 58)
     if all(results):

@@ -46,17 +46,9 @@ def _page_needs_ocr(page, text: str) -> bool:
 
 
 def _render_page_for_ocr(page):
-    """把 PDF 页渲染成 RGB numpy 数组，交给 RapidOCR。"""
+    """把 PDF 页渲染成 PNG 字节，交给云端 OCR。"""
     pix = page.get_pixmap(dpi=max(120, config.OCR_DPI))
-    image = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
-        pix.height, pix.width, pix.n)
-    if pix.n == 1:
-        image = np.repeat(image, 3, axis=2)
-    elif pix.n == 2:
-        image = np.repeat(image[:, :, :1], 3, axis=2)
-    elif pix.n >= 4:
-        image = image[:, :, :3]
-    return image
+    return pix.tobytes("png")
 
 
 def extract_pages(pdf_path: str, run_ocr: bool = False,
@@ -88,8 +80,9 @@ def extract_pages(pdf_path: str, run_ocr: bool = False,
                         else:
                             try:
                                 recognized = ocr.recognize(_render_page_for_ocr(page))
-                            except ocr.OCRUnavailable:
-                                raise
+                            except ocr.OCRUnavailable as exc:
+                                # 接口整体不可用（没 key / 连不上）：直接失败，别建半截索引
+                                raise ocr.OCRUnavailable(f"第 {number} 页：{exc}") from exc
                             except Exception as exc:  # noqa: BLE001 单页失败不拖垮整篇
                                 errors.append(f"第 {number} 页：{exc}")
                             else:
@@ -117,9 +110,12 @@ def extract_pages(pdf_path: str, run_ocr: bool = False,
             detail = f"（{'；'.join(errors[:3])}）" if errors else ""
             raise PdfExtractError("OCR 完成，但仍没有识别到有效文字。" + detail)
         if not any(p.get("needs_ocr") for p in pages):
+            hint = ("扫描件识别已关闭（OCR_ENABLED=0），"
+                    "在 backend/.env 里改成 1 就能自动认字。"
+                    if not config.OCR_ENABLED else
+                    "自动识别也没认出文字，看服务日志里 [OCR] 那行。")
             raise PdfExtractError(
-                "这份 PDF 提取不到有效文字，可能是扫描件（图片型 PDF）。"
-                "请先用 OCR 转成可复制文字的 PDF。"
+                "这份 PDF 提取不到有效文字，可能是扫描件（图片型 PDF）。" + hint
             )
     return pages
 
