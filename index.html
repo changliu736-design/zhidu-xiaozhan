@@ -253,6 +253,8 @@
 
             /* tab 和按钮在小屏上紧凑一点，手指更好点 */
             .tab-btn { padding-top: 0.6rem; padding-bottom: 0.6rem; font-size: 0.8rem; }
+            /* 手机上的列表项留点上下空隙，手指好点 */
+            #document-list li { padding-top: 0.6rem; padding-bottom: 0.6rem; }
             .tab-btn i { margin-right: 0.15rem; }
             #panel-summary .p-5, .p-5 { padding: 0.85rem; }
             button, select { -webkit-tap-highlight-color: transparent; }
@@ -277,6 +279,17 @@
             #pdf-panel.mobile-open iframe { padding: 0.75rem; }
             #pdf-panel.mobile-open #text-view { font-size: 15px; line-height: 1.85; }
             #mobile-pdf-btn { border-bottom: 2px solid transparent; }
+        }
+
+        /* 文献列表左侧的勾选框：常驻显示，方便随时挑几篇做对比 */
+        .doc-select {
+            width: 15px; height: 15px; accent-color: #2563eb;
+            cursor: pointer; flex-shrink: 0;
+        }
+
+        /* 手机上的勾选框放大一点，手指好点中（放在基础样式之后才生效） */
+        @media (max-width: 767px) {
+            .doc-select { width: 20px; height: 20px; }
         }
     </style>
 </head>
@@ -1149,12 +1162,14 @@ function filteredDocuments() {
 
 function updateBatchBar() {
     const bar = $('batch-bar');
+    const count = selectedDocs.size;
+    // 勾选框常驻，所以「勾了就有批量栏」，不用先点「管理」
+    const showBar = count > 0 || managingDocs;
     if (bar) {
-        bar.classList.toggle('hidden', !managingDocs);
-        bar.classList.toggle('flex', managingDocs);
+        bar.classList.toggle('hidden', !showBar);
+        bar.classList.toggle('flex', showBar);
     }
     $('manage-toggle').textContent = managingDocs ? '完成' : '管理';
-    const count = selectedDocs.size;
     $('batch-count').textContent = `已选 ${count} 篇`;
     ['batch-delete', 'batch-star', 'batch-category', 'batch-tag', 'batch-cite']
         .forEach((id) => { if ($(id)) $(id).disabled = count === 0; });
@@ -1257,8 +1272,9 @@ function docItemHtml(doc) {
     </div>` : '';
 
     const icon = FILE_ICONS[doc.source_type] || FILE_ICONS.text;
+    // 动作按钮绝对定位在右上角，避免撑高整行（列表更紧凑）
     const actions = managingDocs ? '' : `
-        <div class="flex flex-col items-center gap-0.5 flex-shrink-0">
+        <div class="absolute top-1 right-1 flex flex-col items-center gap-0.5">
             <button class="star-doc p-0.5 ${doc.starred ? 'zd-star-on' : 'text-gray-300 hover:text-amber-500'}"
                     data-id="${doc.id}" title="${doc.starred ? '取消星标' : '加星标'}">
                 <i class="fa ${doc.starred ? 'fa-star' : 'fa-star-o'} text-xs"></i>
@@ -1278,8 +1294,10 @@ function docItemHtml(doc) {
 
     return `<li data-id="${doc.id}" class="p-2 rounded-md hover:bg-neutral cursor-pointer group relative transition-all-300 ${isActive ? 'doc-active' : ''} ${selected ? 'ring-1 ring-primary/40 bg-primary/5' : ''}">
         <div class="flex items-start">
-            ${managingDocs ? `<input type="checkbox" class="doc-select mt-1 mr-2 flex-shrink-0" data-id="${doc.id}" ${selected ? 'checked' : ''}>` : `<i class="fa ${icon[0]} ${icon[1]} mt-1 mr-2"></i>`}
-            <div class="flex-1 min-w-0">
+            <input type="checkbox" class="doc-select mt-1 mr-1.5 flex-shrink-0" data-id="${doc.id}"
+                   title="勾选后可批量操作，也能把这几篇拿去做对比" ${selected ? 'checked' : ''}>
+            <i class="fa ${icon[0]} ${icon[1]} mt-1 mr-1.5 flex-shrink-0 doc-icon"></i>
+            <div class="flex-1 min-w-0 pr-6">
                 <p class="text-xs font-medium truncate" title="${escapeAttr(name)}">${escapeHtml(name)}</p>
                 ${name !== doc.filename ? `<p class="text-[10px] text-gray-300 truncate" title="原名：${escapeAttr(doc.filename)}">原名：${escapeHtml(doc.filename)}</p>` : ''}
                 ${statusHtml}
@@ -3264,7 +3282,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('category-filter').addEventListener('change', renderDocumentList);
     $('tag-filter').addEventListener('change', renderDocumentList);
     $('manage-toggle').addEventListener('click', () => setManagingDocs(!managingDocs));
-    $('batch-exit').addEventListener('click', () => setManagingDocs(false));
+    $('batch-exit').addEventListener('click', () => {
+        // 只清空勾选，不退出阅读状态
+        selectedDocs.clear();
+        renderDocumentList();
+    });
     $('batch-delete').addEventListener('click', deleteSelectedDocuments);
     $('batch-all').addEventListener('change', () => {
         const visible = filteredDocuments();
