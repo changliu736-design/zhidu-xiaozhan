@@ -110,6 +110,8 @@ def summary_of(info: Dict) -> Dict:
         "source_type": info.get("source_type", "pdf"),
         "unit": info.get("unit", "页"),
         "ocr_pages": info.get("ocr_pages", 0),
+        "starred": bool(info.get("starred")),
+        "citation": info.get("citation") or {},
     }
 
 

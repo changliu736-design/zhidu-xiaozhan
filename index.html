@@ -178,6 +178,106 @@
         @media (prefers-reduced-motion: reduce) {
             .aurora-base, .sweep, .orb, .ribbon { animation: none !important; }
         }
+
+        /* ---------------- 星标 / 分组 ---------------- */
+        .zd-star-on { color: #f59e0b; }
+        .zd-group-head {
+            position: sticky; top: 0; z-index: 5;
+            background: #fff; padding: 0.35rem 0.5rem 0.25rem;
+            font-size: 11px; color: #94a3b8; letter-spacing: 0.02em;
+            display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        /* ---------------- 划词工具条 ---------------- */
+        #sel-toolbar {
+            position: fixed; z-index: 400; display: none;
+            background: #1e293b; color: #fff; border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
+            padding: 3px; gap: 2px; align-items: center;
+            transform: translate(-50%, -100%);
+        }
+        #sel-toolbar button {
+            font-size: 12px; padding: 5px 9px; border-radius: 6px;
+            color: #e2e8f0; white-space: nowrap;
+        }
+        #sel-toolbar button:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+        /* 小三角，让工具条看起来是「贴在选中的字上面」 */
+        #sel-toolbar::after {
+            content: ''; position: absolute; left: 50%; bottom: -5px;
+            width: 10px; height: 10px; background: #1e293b;
+            transform: translateX(-50%) rotate(45deg); border-radius: 2px;
+        }
+
+        #sel-card {
+            position: fixed; right: 18px; bottom: 18px; z-index: 401;
+            width: 360px; max-width: calc(100vw - 24px);
+            max-height: 60vh; display: none; flex-direction: column;
+            background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18); overflow: hidden;
+        }
+
+        /* ---------------- 手机端适配 ---------------- */
+        #mobile-aside-bar { display: none; }
+
+        @media (max-width: 767px) {
+            body { font-size: 14px; }
+
+            /* 顶栏：一行 logo + 一行可横向滑动的操作，整体压到 100px 以内 */
+            header .max-w-7xl { padding: 0.4rem 0.6rem; flex-wrap: wrap; gap: 0.25rem; }
+            header h1 { font-size: 0.95rem; }
+            header .text-xs { font-size: 11px; }
+            header p { display: none; }
+            #header-actions {
+                width: 100%; flex: 1 1 100%;
+                flex-wrap: nowrap; justify-content: flex-start;
+                gap: 0.35rem; overflow-x: auto; padding-bottom: 2px;
+                -webkit-overflow-scrolling: touch;
+            }
+            #header-actions > * { flex-shrink: 0; }
+            #header-actions::-webkit-scrollbar { display: none; }
+            #header-actions .pl-3 { padding-left: 0.4rem; }
+            #quota-badge { white-space: nowrap; }
+            #toggle-pdf, #kb-ask-btn, #change-pwd-btn, #logout-btn { padding: 0.3rem 0.5rem; }
+
+            /* 文献列表变成上方可折叠的一块，正文区占满剩下的屏幕 */
+            aside { width: 100% !important; max-height: 40vh; border-right: 0; border-bottom: 1px solid #e5e7eb; }
+            main { flex-direction: column; }
+            #mobile-aside-bar {
+                display: flex; align-items: center; justify-content: space-between;
+                padding: 0.4rem 0.7rem; border-bottom: 1px solid #e5e7eb; background: #f9fafb;
+                flex-shrink: 0;
+            }
+            aside.aside-collapsed { max-height: none; }
+            aside.aside-collapsed > *:not(#mobile-aside-bar) { display: none; }
+
+            /* tab 和按钮在小屏上紧凑一点，手指更好点 */
+            .tab-btn { padding-top: 0.6rem; padding-bottom: 0.6rem; font-size: 0.8rem; }
+            .tab-btn i { margin-right: 0.15rem; }
+            #panel-summary .p-5, .p-5 { padding: 0.85rem; }
+            button, select { -webkit-tap-highlight-color: transparent; }
+            #qa-input, #translate-input, #lib-ask-input { font-size: 16px; } /* 防止 iOS 自动放大 */
+
+            /* 弹窗铺满宽度，内部可滚动 */
+            #doc-meta-modal > div, #citation-modal > div, #pwd-modal > div {
+                width: 100% !important; max-width: 100% !important;
+                margin: 0 0.5rem; max-height: 88vh; overflow-y: auto;
+            }
+            #library-modal { padding: 0.5rem; }
+            #library-modal > div { height: 92vh; }
+            #sel-card { right: 8px; left: 8px; bottom: 8px; width: auto; max-height: 55vh; }
+            #sel-toolbar { z-index: 90; }
+
+            /* 手机上「看原文」铺满整屏，看完点右上角关掉 */
+            #pdf-panel.mobile-open {
+                display: flex; position: fixed; inset: 0; z-index: 80;
+                width: 100%; height: 100%; background: #fff; border-left: 0;
+            }
+            #pdf-panel.mobile-open #text-view,
+            #pdf-panel.mobile-open iframe { padding: 0.75rem; }
+            #pdf-panel.mobile-open #text-view { font-size: 15px; line-height: 1.85; }
+            #mobile-pdf-btn { border-bottom: 2px solid transparent; }
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
@@ -309,12 +409,90 @@
                 <input id="meta-tags" maxlength="200" placeholder="用逗号或空格分隔，如：Transformer 综述"
                        class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary">
             </div>
+            <!-- 引用信息：填了才能生成规范的参考文献条目 -->
+            <div class="pt-1 border-t border-gray-100">
+                <p class="text-xs text-gray-500 mt-2 mb-2 flex items-center justify-between">
+                    <span><i class="fa fa-quote-left mr-1 text-gray-400"></i>引用信息（导出参考文献用，可留空）</span>
+                </p>
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="col-span-2">
+                        <input id="meta-authors" maxlength="300" placeholder="作者，如：张三, 李四 或 Vaswani, A."
+                               class="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary">
+                    </div>
+                    <input id="meta-year" maxlength="10" placeholder="年份"
+                           class="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary">
+                    <select id="meta-type" class="w-full text-xs border border-gray-300 rounded-lg px-2 py-1.5 text-gray-600 focus:outline-none">
+                        <option value="journal">期刊论文</option>
+                        <option value="conference">会议论文</option>
+                        <option value="book">图书</option>
+                        <option value="thesis">学位论文</option>
+                    </select>
+                    <div class="col-span-2">
+                        <input id="meta-source" maxlength="200" placeholder="期刊 / 会议 / 出版社名称"
+                               class="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary">
+                    </div>
+                    <input id="meta-volume" maxlength="20" placeholder="卷"
+                           class="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary">
+                    <input id="meta-issue" maxlength="20" placeholder="期"
+                           class="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary">
+                    <input id="meta-pages" maxlength="30" placeholder="页码，如 120-131"
+                           class="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary">
+                    <input id="meta-doi" maxlength="120" placeholder="DOI"
+                           class="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary">
+                </div>
+            </div>
         </div>
         <div id="meta-error" class="text-xs text-red-600 mt-3 hidden"></div>
         <div class="flex gap-2 mt-5">
             <button id="meta-cancel" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200">取消</button>
             <button id="meta-save" class="flex-1 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary/90">保存</button>
         </div>
+    </div>
+</div>
+
+<!-- ==================== 参考文献格式弹窗 ==================== -->
+<div id="citation-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[115] hidden p-3">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-5">
+        <div class="flex justify-between items-center mb-3">
+            <h3 class="text-base font-medium"><i class="fa fa-quote-left text-primary mr-1.5"></i>生成参考文献</h3>
+            <button id="cite-close" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button>
+        </div>
+        <div id="cite-style-tabs" class="flex gap-1.5 mb-3 flex-wrap">
+            <button data-cite-style="gbt7714" class="cite-style-btn text-[11px] px-2.5 py-1 rounded-md border border-primary bg-blue-50 text-primary">GB/T 7714</button>
+            <button data-cite-style="apa" class="cite-style-btn text-[11px] px-2.5 py-1 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50">APA</button>
+            <button data-cite-style="mla" class="cite-style-btn text-[11px] px-2.5 py-1 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50">MLA</button>
+            <button data-cite-style="bibtex" class="cite-style-btn text-[11px] px-2.5 py-1 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50">BibTeX</button>
+        </div>
+        <div id="cite-missing" class="text-[11px] text-amber-600 mb-2 hidden"></div>
+        <textarea id="cite-text" readonly rows="6"
+                  class="w-full text-xs leading-relaxed font-mono bg-neutral border border-gray-200 rounded-lg p-3 text-gray-700 focus:outline-none"></textarea>
+        <div id="cite-src-hint" class="text-[11px] text-gray-400 mt-1.5"></div>
+        <div class="flex gap-2 mt-4">
+            <button id="cite-edit" class="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200">补充信息</button>
+            <button id="cite-copy" class="flex-1 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary/90">
+                <i class="fa fa-copy mr-1"></i>复制
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== 划词工具条 + 结果卡片 ==================== -->
+<div id="sel-toolbar">
+    <button data-sel-act="ask"><i class="fa fa-comments-o mr-1"></i>问这段</button>
+    <button data-sel-act="translate"><i class="fa fa-language mr-1"></i>翻译</button>
+    <button data-sel-act="copy"><i class="fa fa-copy mr-1"></i>复制</button>
+</div>
+
+<div id="sel-card">
+    <div class="px-3 py-2 border-b border-gray-200 flex items-center justify-between flex-shrink-0 bg-neutral">
+        <span id="sel-card-title" class="text-xs font-medium text-gray-700">划词结果</span>
+        <button id="sel-card-close" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times text-xs"></i></button>
+    </div>
+    <div id="sel-card-body" class="flex-1 overflow-y-auto scrollbar-thin px-3 py-2.5 text-sm leading-relaxed text-gray-700"></div>
+    <div class="border-t border-gray-200 p-2 flex gap-1.5 flex-shrink-0">
+        <input id="sel-question" maxlength="300" placeholder="对这段继续提问…"
+               class="flex-1 text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary">
+        <button id="sel-ask-btn" class="px-3 py-1.5 bg-primary text-white rounded-md text-xs hover:bg-primary/90">问</button>
     </div>
 </div>
 
@@ -401,12 +579,17 @@
                 <p class="text-xs text-gray-400 leading-tight">答案带页码出处 · 点击可跳原文</p>
             </div>
         </div>
-        <div class="flex items-center space-x-3">
+        <div id="header-actions" class="flex items-center space-x-3">
             <div id="engine-badge" class="hidden md:flex items-center text-xs text-gray-500 space-x-2"></div>
             <a id="admin-link" href="admin.html"
                class="hidden text-xs px-3 py-1.5 bg-blue-50 text-primary rounded-md hover:bg-blue-100">
                 <i class="fa fa-shield mr-1"></i>管理后台
             </a>
+            <span id="quota-badge" class="hidden text-[11px] px-2 py-1 bg-gray-100 text-gray-500 rounded-md"
+                  title="今日各功能剩余次数">今日额度</span>
+            <button id="kb-ask-btn" class="text-xs px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-md hover:bg-emerald-100">
+                <i class="fa fa-search mr-1"></i>我的知识库
+            </button>
             <button id="toggle-pdf" class="text-xs px-3 py-1.5 bg-neutral text-gray-600 rounded-md hover:bg-gray-200">
                 <i class="fa fa-file-pdf-o mr-1"></i>原文预览
             </button>
@@ -425,6 +608,15 @@
 
     <!-- 左侧：文献 -->
     <aside class="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+        <div id="mobile-aside-bar">
+            <span class="text-xs font-medium text-gray-600">
+                <i class="fa fa-file-text-o mr-1.5"></i>我的文献
+                <span id="mobile-doc-count" class="ml-1 text-gray-400 font-normal"></span>
+            </span>
+            <button id="mobile-aside-toggle" class="text-[11px] text-primary px-2 py-1 rounded hover:bg-blue-50">
+                <i class="fa fa-chevron-up mr-1"></i>收起
+            </button>
+        </div>
         <div class="p-3 border-b border-gray-200">
             <div id="upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:border-primary transition-all-300">
                 <i class="fa fa-cloud-upload text-2xl text-gray-400 mb-1"></i>
@@ -465,6 +657,14 @@
                     <option value="">全部标签</option>
                 </select>
             </div>
+            <div class="flex items-center gap-1.5">
+                <button id="star-filter-btn" class="flex-1 min-w-0 text-[11px] py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-all-300">
+                    <i class="fa fa-star-o mr-1"></i>只看星标
+                </button>
+                <button id="group-toggle-btn" class="flex-1 min-w-0 text-[11px] py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-all-300">
+                    <i class="fa fa-folder-o mr-1"></i>按分类分组
+                </button>
+            </div>
         </div>
         <div class="flex-1 overflow-y-auto scrollbar-thin">
             <div class="p-3">
@@ -475,14 +675,30 @@
                     </h2>
                     <button id="manage-toggle" class="text-[11px] text-primary hover:underline">管理</button>
                 </div>
-                <div id="batch-bar" class="hidden flex mb-2 px-2 py-1.5 bg-neutral rounded-md text-[11px] items-center justify-between">
-                    <label class="flex items-center cursor-pointer text-gray-500">
-                        <input type="checkbox" id="batch-all" class="mr-1">全选
-                    </label>
-                    <span id="batch-count" class="text-gray-500">已选 0 篇</span>
-                    <div class="flex items-center gap-2">
-                        <button id="batch-exit" class="text-gray-400 hover:text-gray-600">取消</button>
-                        <button id="batch-delete" disabled class="text-red-500 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed">删除</button>
+                <div id="batch-bar" class="hidden flex-col mb-2 px-2 py-1.5 bg-neutral rounded-md text-[11px]">
+                    <div class="flex items-center justify-between">
+                        <label class="flex items-center cursor-pointer text-gray-500">
+                            <input type="checkbox" id="batch-all" class="mr-1">全选
+                        </label>
+                        <span id="batch-count" class="text-gray-500">已选 0 篇</span>
+                        <div class="flex items-center gap-2">
+                            <button id="batch-exit" class="text-gray-400 hover:text-gray-600">取消</button>
+                            <button id="batch-delete" disabled class="text-red-500 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed">删除</button>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1.5 mt-1.5 pt-1.5 border-t border-gray-200">
+                        <button id="batch-star" disabled class="flex-1 py-1 rounded bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+                            <i class="fa fa-star-o mr-1"></i>星标
+                        </button>
+                        <button id="batch-category" disabled class="flex-1 py-1 rounded bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+                            <i class="fa fa-folder-o mr-1"></i>分类
+                        </button>
+                        <button id="batch-tag" disabled class="flex-1 py-1 rounded bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+                            <i class="fa fa-tag mr-1"></i>标签
+                        </button>
+                        <button id="batch-cite" disabled class="flex-1 py-1 rounded bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+                            <i class="fa fa-quote-left mr-1"></i>引用
+                        </button>
                     </div>
                 </div>
                 <ul id="document-list" class="space-y-1"></ul>
@@ -502,6 +718,9 @@
             <button data-tab="translate" class="tab-btn flex-1 py-3 text-sm font-medium text-gray-500 hover:text-primary">
                 <i class="fa fa-language mr-1"></i> 精准翻译
             </button>
+            <button id="mobile-pdf-btn" class="md:hidden px-3 py-3 text-sm text-gray-500 hover:text-primary border-b-2 border-transparent" title="看原文，可长按选中文字提问">
+                <i class="fa fa-book-open mr-1"></i>看原文
+            </button>
         </div>
 
         <div class="flex-1 overflow-y-auto scrollbar-thin p-5">
@@ -517,6 +736,10 @@
                         <button id="summary-export-md" disabled title="导出当前摘要为 Markdown"
                                 class="export-btn text-xs px-2 py-1 bg-white border border-gray-300 text-gray-600 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
                             <i class="fa fa-file-text-o mr-1"></i>MD
+                        </button>
+                        <button id="summary-cite-btn" disabled title="生成参考文献格式"
+                                class="text-xs px-2 py-1 bg-white border border-gray-300 text-gray-600 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i class="fa fa-quote-left mr-1"></i>引用
                         </button>
                         <button id="generate-summary" class="text-xs px-3 py-1 bg-primary text-white rounded hover:bg-primary/90 flex items-center">
                             <i class="fa fa-refresh mr-1"></i> 生成摘要
@@ -582,6 +805,9 @@
                     class="text-[11px] px-2 py-0.5 bg-white border border-amber-500 text-amber-700 rounded hover:bg-amber-50 whitespace-nowrap flex-shrink-0 hidden">
                 <i class="fa fa-upload mr-1"></i>导入高亮
             </button>
+            <button id="mobile-pdf-close" class="md:hidden text-gray-400 hover:text-gray-600 px-1" title="关闭原文">
+                <i class="fa fa-times"></i>
+            </button>
             <input type="file" id="import-highlights-input" accept=".pdf" class="hidden">
         </div>
         <div id="page-nav" class="hidden flex items-center gap-1.5 px-3 py-1 bg-white border-b border-gray-100 text-[11px] text-gray-500 flex-shrink-0">
@@ -645,6 +871,13 @@ const selectedDocs = new Set();
 let managingDocs = false;
 let editingDocId = null;
 let progressTimer = null;
+// 星标 / 分组 / 引用 / 划词
+let starOnly = false;
+let groupMode = false;
+let citeDocId = null;
+let citeStyle = 'gbt7714';
+let selText = '';
+let selPage = 0;
 
 const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'md', 'markdown', 'txt'];
 const FILE_ICONS = {
@@ -687,7 +920,8 @@ function renderRich(text) {
     const escaped = escapeHtml(text);
     const withChips = escaped.replace(/\[\[\s*p\.?\s*(\d+)\s*\]\]/g,
         (m, n) => `<button class="cite-chip" data-page="${n}" title="跳转到第 ${n} ${unit}">${n}${unit}</button>`);
-    return withChips;
+    // 模型偶尔会写 **重点**，转成真的加粗，别让星号露出来
+    return withChips.replace(/\*\*([^*\n]{1,80})\*\*/g, '<strong>$1</strong>');
 }
 
 // 后端校验后会删掉检索片段里不存在的出处；这里给一条不打断阅读的提示
@@ -702,6 +936,7 @@ function invalidCitationNote(pages) {
 
 // ==================================================================== 鉴权
 function showAuth(message) {
+    hideSelToolbar();
     $('auth-overlay').classList.remove('hidden');
     if (message) authError(message);
 }
@@ -820,6 +1055,7 @@ function startApp(user) {
     $('admin-link').classList.toggle('hidden', user.role !== 'admin');
     loadHealth();
     loadDocuments();
+    loadQuota();
 }
 
 // ==================================================================== 状态
@@ -906,17 +1142,22 @@ function filteredDocuments() {
         if (query && !display.includes(query) && !original.includes(query)) return false;
         if (category && (doc.category || '') !== category) return false;
         if (tag && !(doc.tags || []).includes(tag)) return false;
+        if (starOnly && !doc.starred) return false;
         return true;
     });
 }
 
 function updateBatchBar() {
     const bar = $('batch-bar');
-    if (bar) bar.classList.toggle('hidden', !managingDocs);
+    if (bar) {
+        bar.classList.toggle('hidden', !managingDocs);
+        bar.classList.toggle('flex', managingDocs);
+    }
     $('manage-toggle').textContent = managingDocs ? '完成' : '管理';
     const count = selectedDocs.size;
     $('batch-count').textContent = `已选 ${count} 篇`;
-    $('batch-delete').disabled = count === 0;
+    ['batch-delete', 'batch-star', 'batch-category', 'batch-tag', 'batch-cite']
+        .forEach((id) => { if ($(id)) $(id).disabled = count === 0; });
     const visible = filteredDocuments().map(d => d.id);
     const selectedVisible = visible.filter(id => selectedDocs.has(id)).length;
     const all = visible.length > 0 && selectedVisible === visible.length;
@@ -929,6 +1170,8 @@ function renderDocumentList() {
     const total = documentsCache.length;
     const docs = filteredDocuments();
     $('doc-count').textContent = total ? `(${docs.length}/${total})` : '';
+    const mobileCount = $('mobile-doc-count');
+    if (mobileCount) mobileCount.textContent = total ? `${docs.length}/${total}` : '还没有文献';
     updateBatchBar();
 
     if (!total) {
@@ -939,6 +1182,28 @@ function renderDocumentList() {
     if (!docs.length) {
         list.innerHTML = `<li class="p-4 text-center text-gray-400 text-xs">
             <i class="fa fa-search text-xl mb-1 block"></i>没有匹配的文献</li>`;
+        return;
+    }
+    if (groupMode) {
+        const groups = new Map();
+        docs.forEach((doc) => {
+            const key = doc.category || '未分类';
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(doc);
+        });
+        const keys = [...groups.keys()].sort((a, b) => {
+            if (a === '未分类') return 1;   // 没分类的永远排最后
+            if (b === '未分类') return -1;
+            return a.localeCompare(b, 'zh');
+        });
+        list.innerHTML = keys.map((key) => {
+            const items = groups.get(key);
+            const starred = items.filter(d => d.starred).length;
+            return `<li class="zd-group-head">
+                    <span><i class="fa fa-folder-o mr-1"></i>${escapeHtml(key)}</span>
+                    <span>${items.length} 篇${starred ? ` · ★${starred}` : ''}</span>
+                </li>` + items.map(docItemHtml).join('');
+        }).join('');
         return;
     }
     list.innerHTML = docs.map(docItemHtml).join('');
@@ -993,13 +1258,22 @@ function docItemHtml(doc) {
 
     const icon = FILE_ICONS[doc.source_type] || FILE_ICONS.text;
     const actions = managingDocs ? '' : `
-        <div class="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
-            <button class="edit-doc text-gray-400 hover:text-primary p-0.5" data-id="${doc.id}" title="编辑标题、分类、标签">
-                <i class="fa fa-pencil text-xs"></i>
+        <div class="flex flex-col items-center gap-0.5 flex-shrink-0">
+            <button class="star-doc p-0.5 ${doc.starred ? 'zd-star-on' : 'text-gray-300 hover:text-amber-500'}"
+                    data-id="${doc.id}" title="${doc.starred ? '取消星标' : '加星标'}">
+                <i class="fa ${doc.starred ? 'fa-star' : 'fa-star-o'} text-xs"></i>
             </button>
-            <button class="delete-doc text-gray-400 hover:text-red-500 p-0.5" data-id="${doc.id}" title="删除">
-                <i class="fa fa-trash-o text-xs"></i>
-            </button>
+            <div class="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100">
+                <button class="cite-doc text-gray-400 hover:text-primary p-0.5" data-id="${doc.id}" title="生成参考文献">
+                    <i class="fa fa-quote-left text-xs"></i>
+                </button>
+                <button class="edit-doc text-gray-400 hover:text-primary p-0.5" data-id="${doc.id}" title="编辑标题、分类、标签、引用信息">
+                    <i class="fa fa-pencil text-xs"></i>
+                </button>
+                <button class="delete-doc text-gray-400 hover:text-red-500 p-0.5" data-id="${doc.id}" title="删除">
+                    <i class="fa fa-trash-o text-xs"></i>
+                </button>
+            </div>
         </div>`;
 
     return `<li data-id="${doc.id}" class="p-2 rounded-md hover:bg-neutral cursor-pointer group relative transition-all-300 ${isActive ? 'doc-active' : ''} ${selected ? 'ring-1 ring-primary/40 bg-primary/5' : ''}">
@@ -1036,6 +1310,18 @@ function onDocumentListClick(event) {
     if (deleteButton) {
         event.stopPropagation();
         deleteDocumentById(deleteButton.dataset.id);
+        return;
+    }
+    const starButton = event.target.closest('.star-doc');
+    if (starButton) {
+        event.stopPropagation();
+        toggleDocStar(starButton.dataset.id);
+        return;
+    }
+    const citeButton = event.target.closest('.cite-doc');
+    if (citeButton) {
+        event.stopPropagation();
+        openCitation(citeButton.dataset.id);
         return;
     }
     const editButton = event.target.closest('.edit-doc');
@@ -1109,10 +1395,20 @@ async function deleteSelectedDocuments() {
 function openDocMeta(id) {
     const doc = documentsCache.find(d => d.id === id);
     if (!doc) return;
+    hideSelToolbar();
     editingDocId = id;
     $('meta-title').value = doc.display_name || doc.filename || '';
     $('meta-category').value = doc.category || '';
     $('meta-tags').value = (doc.tags || []).join('、');
+    const citation = doc.citation || {};
+    $('meta-authors').value = citation.authors || '';
+    $('meta-year').value = citation.year || '';
+    $('meta-source').value = citation.source || '';
+    $('meta-volume').value = citation.volume || '';
+    $('meta-issue').value = citation.issue || '';
+    $('meta-pages').value = citation.pages || '';
+    $('meta-doi').value = citation.doi || '';
+    $('meta-type').value = citation.type || 'journal';
     $('meta-error').classList.add('hidden');
     $('doc-meta-modal').classList.remove('hidden');
     $('meta-title').focus();
@@ -1134,6 +1430,16 @@ async function saveDocMeta() {
     const title = $('meta-title').value.trim();
     if (!title) { showMetaError('标题不能为空'); return; }
     const tags = $('meta-tags').value.split(/[,，、;；\s]+/).map(s => s.trim()).filter(Boolean);
+    const citation = {
+        type: $('meta-type').value,
+        authors: $('meta-authors').value.trim(),
+        year: $('meta-year').value.trim(),
+        source: $('meta-source').value.trim(),
+        volume: $('meta-volume').value.trim(),
+        issue: $('meta-issue').value.trim(),
+        pages: $('meta-pages').value.trim(),
+        doi: $('meta-doi').value.trim(),
+    };
     const button = $('meta-save');
     button.disabled = true;
     showMetaError('');
@@ -1145,6 +1451,7 @@ async function saveDocMeta() {
                 display_name: title,
                 category: $('meta-category').value.trim(),
                 tags,
+                citation,
             }),
         });
         const data = await response.json();
@@ -1184,6 +1491,8 @@ function selectDocument(doc, page) {
     else showPreview(Number((doc.progress || {}).page) || 1);
     loadSummary();
     loadMarks();
+    // 手机上选完文献就把左栏收起来，正文才够地方看
+    if (window.matchMedia('(max-width: 767px)').matches) setAsideCollapsed(true);
 }
 
 function resetPanels() {
@@ -1574,6 +1883,7 @@ function refreshLibraryScope() {
 }
 
 function openLibraryModal() {
+    hideSelToolbar();
     refreshLibraryScope();
     $('library-modal').classList.remove('hidden');
     setTimeout(() => $('lib-ask-input').focus(), 50);
@@ -2887,7 +3197,11 @@ bindLibraryAssistant();
 // 全局委托：所有 .cite-chip 点击都跳到对应页
 document.addEventListener('click', (event) => {
     const chip = event.target.closest('.cite-chip');
-    if (chip) openPage(parseInt(chip.dataset.page, 10));
+    if (chip) {
+        // 手机上正文在浮层里，先打开再看，否则点出处没反应
+        if (currentDocumentId) openMobilePdf();
+        openPage(parseInt(chip.dataset.page, 10));
+    }
 });
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -2978,6 +3292,78 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (event.target === $('doc-meta-modal')) closeDocMeta();
     });
 
+    // ---------------- 星标 / 分组 / 引用 / 额度 / 划词 ----------------
+    $('mobile-aside-toggle') && $('mobile-aside-toggle').addEventListener('click', () => {
+        const aside = document.querySelector('aside');
+        setAsideCollapsed(!aside.classList.contains('aside-collapsed'));
+    });
+    $('mobile-pdf-btn') && $('mobile-pdf-btn').addEventListener('click', () => {
+        if (!currentDocumentId) { alert('请先选一篇文献'); return; }
+        openMobilePdf();
+    });
+    $('mobile-pdf-close') && $('mobile-pdf-close').addEventListener('click', closeMobilePdf);
+    $('star-filter-btn').addEventListener('click', () => {
+        starOnly = !starOnly;
+        syncFilterButtons();
+        renderDocumentList();
+    });
+    $('group-toggle-btn').addEventListener('click', () => {
+        groupMode = !groupMode;
+        syncFilterButtons();
+        renderDocumentList();
+    });
+    $('batch-star').addEventListener('click', () => batchUpdate({ starred: true }, '已给 {n} 篇文献加星标'));
+    $('batch-category').addEventListener('click', () => {
+        const value = prompt('把选中的文献统一归到哪个分类？（留空表示清除分类）');
+        if (value === null) return;
+        batchUpdate({ category: value.trim() }, value.trim() ? `已把 {n} 篇文献归到「${value.trim()}」` : '已清除 {n} 篇文献的分类');
+    });
+    $('batch-tag').addEventListener('click', () => {
+        const value = prompt('给选中的文献加一个标签，例如：待读 / 重点');
+        if (!value || !value.trim()) return;
+        batchUpdate({ add_tags: [value.trim()] }, `已给 {n} 篇文献加上标签「${value.trim()}」`);
+    });
+    $('batch-cite').addEventListener('click', openBatchCitation);
+    $('summary-cite-btn').addEventListener('click', () => {
+        if (currentDocumentId) openCitation(currentDocumentId);
+    });
+    $('cite-close').addEventListener('click', closeCitation);
+    $('citation-modal').addEventListener('click', (event) => {
+        if (event.target === $('citation-modal')) closeCitation();
+    });
+    $('cite-copy').addEventListener('click', copyCitation);
+    $('cite-edit').addEventListener('click', () => {
+        const id = citeIds[0];
+        closeCitation();
+        if (id) openDocMeta(id);
+    });
+    $('cite-style-tabs').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-cite-style]');
+        if (!button) return;
+        citeStyle = button.dataset.citeStyle;
+        syncCiteStyleTabs();
+        refreshCitation();
+    });
+    $('kb-ask-btn').addEventListener('click', openLibraryModal);
+
+    // 划词：选中正文里的一段字，弹小工具条
+    ['mouseup', 'touchend'].forEach((type) => document.addEventListener(type, handleSelectionEvent));
+    document.addEventListener('mousedown', (event) => {
+        if (!event.target.closest('#sel-toolbar')) hideSelToolbar();
+    });
+    document.addEventListener('scroll', hideSelToolbar, true);
+    $('sel-toolbar').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-sel-act]');
+        if (button) selectionAction(button.dataset.selAct);
+    });
+    $('sel-card-close').addEventListener('click', () => { $('sel-card').style.display = 'none'; });
+    $('sel-ask-btn').addEventListener('click', () => {
+        selectionAction('explain', ($('sel-question').value || '').trim());
+    });
+    $('sel-question').addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') selectionAction('explain', ($('sel-question').value || '').trim());
+    });
+
     setAuthMode('login');
     resetPanels();
     randomizeBackground();
@@ -2996,6 +3382,310 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     showAuth();
 });
+// ==================================================================== 星标 / 分组
+
+function isMobileScreen() {
+    return window.matchMedia('(max-width: 767px)').matches;
+}
+
+// 手机端：原文面板平时是隐藏的，点「看原文」时铺满整屏
+function openMobilePdf() {
+    if (!isMobileScreen()) return false;
+    const panel = $('pdf-panel');
+    if (!panel) return false;
+    panel.classList.add('mobile-open');
+    document.body.style.overflow = 'hidden';
+    return true;
+}
+
+function closeMobilePdf() {
+    const panel = $('pdf-panel');
+    if (!panel) return;
+    panel.classList.remove('mobile-open');
+    document.body.style.overflow = '';
+}
+
+// 手机端：把左侧文献列表收起来，只留一条细栏
+function setAsideCollapsed(collapsed) {
+    const aside = document.querySelector('aside');
+    if (!aside) return;
+    aside.classList.toggle('aside-collapsed', !!collapsed);
+    const button = $('mobile-aside-toggle');
+    if (button) {
+        button.innerHTML = collapsed
+            ? '<i class="fa fa-chevron-down mr-1"></i>展开列表'
+            : '<i class="fa fa-chevron-up mr-1"></i>收起';
+    }
+}
+
+function syncFilterButtons() {
+    const star = $('star-filter-btn');
+    if (star) {
+        star.classList.toggle('bg-amber-50', starOnly);
+        star.classList.toggle('border-amber-300', starOnly);
+        star.classList.toggle('text-amber-600', starOnly);
+        star.innerHTML = `<i class="fa ${starOnly ? 'fa-star' : 'fa-star-o'} mr-1"></i>只看星标`;
+    }
+    const group = $('group-toggle-btn');
+    if (group) {
+        group.classList.toggle('bg-blue-50', groupMode);
+        group.classList.toggle('border-primary', groupMode);
+        group.classList.toggle('text-primary', groupMode);
+        group.innerHTML = `<i class="fa ${groupMode ? 'fa-folder' : 'fa-folder-o'} mr-1"></i>按分类分组`;
+    }
+}
+
+async function toggleDocStar(id) {
+    const doc = documentsCache.find(d => d.id === id);
+    if (!doc) return;
+    try {
+        const response = await apiFetch(`/api/documents/${id}`, {
+            method: 'PATCH',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ starred: !doc.starred }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '操作失败');
+        const index = documentsCache.findIndex(d => d.id === data.document.id);
+        if (index >= 0) documentsCache[index] = data.document;
+        renderDocumentList();
+    } catch (error) { alert('操作失败：' + error.message); }
+}
+
+async function batchUpdate(payload, tip) {
+    const ids = [...selectedDocs];
+    if (!ids.length) return;
+    try {
+        const response = await apiFetch('/api/documents/batch-update', {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(Object.assign({ ids }, payload)),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '操作失败');
+        await loadDocuments();
+        alert(String(tip).replace('{n}', data.updated));
+    } catch (error) { alert('操作失败：' + error.message); }
+}
+
+// ==================================================================== 参考文献
+let citeIds = [];
+
+function syncCiteStyleTabs() {
+    document.querySelectorAll('.cite-style-btn').forEach((button) => {
+        const active = button.dataset.citeStyle === citeStyle;
+        button.classList.toggle('border-primary', active);
+        button.classList.toggle('bg-blue-50', active);
+        button.classList.toggle('text-primary', active);
+        button.classList.toggle('border-gray-200', !active);
+        button.classList.toggle('text-gray-500', !active);
+    });
+}
+
+function openCitation(id) {
+    citeIds = [id];
+    hideSelToolbar();
+    $('citation-modal').classList.remove('hidden');
+    syncCiteStyleTabs();
+    refreshCitation();
+}
+
+function openBatchCitation() {
+    citeIds = [...selectedDocs];
+    if (!citeIds.length) return;
+    hideSelToolbar();
+    $('citation-modal').classList.remove('hidden');
+    syncCiteStyleTabs();
+    refreshCitation();
+}
+
+function closeCitation() {
+    $('citation-modal').classList.add('hidden');
+}
+
+async function refreshCitation() {
+    const box = $('cite-text');
+    if (!citeIds.length) { box.value = ''; return; }
+    box.value = '正在生成…';
+    const texts = [];
+    const missing = new Set();
+    for (const id of citeIds) {
+        try {
+            const response = await apiFetch(
+                `/api/documents/${id}/citation?style=${encodeURIComponent(citeStyle)}`,
+                { headers: authHeaders() });
+            const data = await response.json();
+            if (!response.ok) continue;
+            if (data.text) texts.push(data.text);
+            (data.missing || []).forEach((m) => missing.add(m));
+        } catch (error) { /* 单篇失败不影响其它，最后统一提示 */ }
+    }
+    box.value = texts.length ? texts.join('\n') : '生成失败，请稍后再试。';
+    const note = $('cite-missing');
+    if (missing.size) {
+        note.textContent = `还缺：${[...missing].join('、')}。点「补充信息」填上，格式会更规范。`;
+        note.classList.remove('hidden');
+    } else {
+        note.classList.add('hidden');
+    }
+    $('cite-src-hint').textContent = citeIds.length > 1
+        ? `共 ${citeIds.length} 篇，按当前格式逐条列出`
+        : '格式照着国标走，具体细节建议再对照学校要求核一遍。';
+}
+
+function copyTextToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+    }
+    fallbackCopy(text);
+    return Promise.resolve();
+}
+
+function fallbackCopy(text) {
+    // 老浏览器 / 非 https 环境兜底
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand('copy'); } catch (error) { /* 复制不了就让用户手动选 */ }
+    document.body.removeChild(area);
+}
+
+async function copyCitation() {
+    const text = $('cite-text').value;
+    if (!text || text === '正在生成…') return;
+    await copyTextToClipboard(text);
+    const button = $('cite-copy');
+    const old = button.innerHTML;
+    button.innerHTML = '<i class="fa fa-check mr-1"></i>已复制';
+    setTimeout(() => { button.innerHTML = old; }, 1500);
+}
+
+// ==================================================================== 每日额度
+async function loadQuota() {
+    try {
+        const response = await apiFetch('/api/quota', { headers: authHeaders() });
+        if (!response.ok) return;
+        const data = await response.json();
+        renderQuota(data.quota || {});
+    } catch (error) { /* 后端没起或还没登录，安静跳过 */ }
+}
+
+function applyQuota(quota) {
+    if (quota) renderQuota(quota);
+}
+
+function renderQuota(quota) {
+    const badge = $('quota-badge');
+    if (!badge) return;
+    const parts = [];
+    Object.keys(quota).forEach((kind) => {
+        const item = quota[kind] || {};
+        if (!item.limit) return;
+        parts.push(`${item.name} ${item.remaining}/${item.limit}`);
+    });
+    if (!parts.length) { badge.classList.add('hidden'); return; }
+    badge.classList.remove('hidden');
+    if (window.matchMedia('(max-width: 767px)').matches) {
+        // 手机顶栏地方小，只留最常用的两项
+        const brief = ['ask', 'selection']
+            .filter(kind => quota[kind] && quota[kind].limit)
+            .map(kind => `${quota[kind].name}${quota[kind].remaining}`);
+        badge.textContent = brief.length ? '剩 ' + brief.join(' · ') : '今日额度';
+    } else {
+        badge.textContent = '今日剩余 ' + parts.join(' · ');
+    }
+    badge.title = '各功能今天还能用几次，0 点自动恢复';
+}
+
+// ==================================================================== 划词提问 / 翻译
+function currentSelectionInfo() {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
+    const text = String(selection).trim();
+    if (text.length < 2) return null;
+    if (text.length > 3000) return null;   // 太长多半是误选整页，不弹
+    let node = selection.anchorNode;
+    if (node && node.nodeType === 3) node = node.parentNode;
+    const host = node && node.closest ? node.closest('#text-view') : null;
+    if (!host) return null;
+    const block = node.closest ? node.closest('[id^="blk-"]') : null;
+    let page = currentPage || 0;
+    if (block) {
+        const parsed = parseInt(String(block.id).replace('blk-', ''), 10);
+        if (Number.isFinite(parsed)) page = parsed;
+    }
+    let rect = null;
+    try { rect = selection.getRangeAt(0).getBoundingClientRect(); } catch (error) { rect = null; }
+    return { text, page, rect };
+}
+
+function handleSelectionEvent() {
+    // 等浏览器把选区定下来再判断
+    window.setTimeout(() => {
+        const info = currentSelectionInfo();
+        if (!info || !info.rect) { hideSelToolbar(); return; }
+        selText = info.text;
+        selPage = info.page;
+        showSelToolbar(info.rect);
+    }, 10);
+}
+
+function showSelToolbar(rect) {
+    const bar = $('sel-toolbar');
+    if (!bar || !rect) return;
+    bar.style.display = 'flex';
+    const half = 95;
+    const left = Math.min(Math.max(rect.left + rect.width / 2, half), window.innerWidth - half);
+    const top = Math.max(rect.top - 8, 8);
+    bar.style.left = left + 'px';
+    bar.style.top = top + 'px';
+}
+
+function hideSelToolbar() {
+    const bar = $('sel-toolbar');
+    if (bar) bar.style.display = 'none';
+}
+
+async function selectionAction(action, question) {
+    if (!currentDocumentId) { alert('请先在左侧选一篇文献'); return; }
+    if (!selText) return;
+    hideSelToolbar();
+    const card = $('sel-card');
+    card.style.display = 'flex';
+    const body = $('sel-card-body');
+
+    if (action === 'copy') {
+        await copyTextToClipboard(selText);
+        $('sel-card-title').textContent = '已复制';
+        body.innerHTML = `<p class="text-xs text-gray-500">已复制选中的 ${selText.length} 个字。</p>`;
+        return;
+    }
+
+    $('sel-card-title').textContent = action === 'translate'
+        ? '划词翻译'
+        : (question ? '划词提问' : '划词解读');
+    body.innerHTML = `<p class="text-xs text-gray-400"><i class="fa fa-spinner fa-spin mr-1"></i>${action === 'translate' ? '正在翻译…' : '正在读这段文字…'}</p>`;
+    try {
+        const response = await apiFetch(`/api/documents/${currentDocumentId}/selection`, {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ text: selText, action, page: selPage, question: question || '' }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '处理失败');
+        applyQuota(data.quota);
+        const preview = selText.length > 160 ? selText.slice(0, 160) + '…' : selText;
+        body.innerHTML = `<div class="text-[11px] text-gray-400 border-l-2 border-gray-200 pl-2 mb-2 max-h-16 overflow-hidden">${escapeHtml(preview)}</div>`
+            + `<div class="whitespace-pre-wrap text-sm">${renderRich(data.text || '')}</div>`;
+    } catch (error) {
+        body.innerHTML = `<p class="text-xs text-red-500">${escapeHtml(error.message)}</p>`;
+    }
+}
+
+syncFilterButtons();
 </script>
 </body>
 </html>

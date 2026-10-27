@@ -234,3 +234,12 @@ def resolve_reranker_path() -> str:
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+
+# ==================================================================== 每日额度
+# 防止单个账号把云端 API 额度刷爆。按自然日统计，0 表示该功能不限制。
+# 想临时放开就把对应变量设成 0；服务器上改 .env 后重启即可。
+DAILY_ASK_LIMIT = int(os.getenv("DAILY_ASK_LIMIT") or "60")
+DAILY_TRANSLATE_LIMIT = int(os.getenv("DAILY_TRANSLATE_LIMIT") or "30")
+DAILY_SUMMARY_LIMIT = int(os.getenv("DAILY_SUMMARY_LIMIT") or "10")
+DAILY_LIBRARY_LIMIT = int(os.getenv("DAILY_LIBRARY_LIMIT") or "20")
+DAILY_SELECTION_LIMIT = int(os.getenv("DAILY_SELECTION_LIMIT") or "40")

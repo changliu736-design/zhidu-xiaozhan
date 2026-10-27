@@ -26,12 +26,14 @@ from werkzeug.utils import secure_filename
 
 import admin
 import auth
+import cite
 import config
 import documents as docs
 import exports as export_store
 import library_rag
 import marks as mark_store
 import ocr
+import quota
 from embeddings import EmbeddingUnavailable, service as embedding_service
 from llm_integration import LLMUnavailable, get_llm
 from reranker import get_reranker
@@ -73,6 +75,24 @@ def passages_payload(passages) -> list:
 def user_scope():
     """登录用户 + 他的文档目录。"""
     return request.user, docs.user_dir(request.user["id"])  # type: ignore[attr-defined]
+
+
+def _quota_guard(directory: Path, kind: str):
+    """占一次每日额度；用完了返回 429 响应，否则返回 None 继续执行。"""
+    allowed, used, limit = quota.consume(directory, kind)
+    if allowed:
+        return None
+    return jsonify({
+        "error": quota.message(kind, limit),
+        "quota": {"kind": kind, "used": used, "limit": limit},
+    }), 429
+
+
+@app.route("/api/quota", methods=["GET"])
+def quota_status():
+    """前端在页头显示「今天还剩几次」，也方便用户自查。"""
+    user, directory = user_scope()
+    return jsonify({"quota": quota.snapshot(directory)}), 200
 
 
 # ==================================================================== 页面
@@ -327,6 +347,9 @@ def library_ask_stream():
         return jsonify({"error": "问题过长，请控制在 1000 字以内"}), 400
     history = _clean_history(data.get("history"))
     doc_ids = _clean_doc_ids(data.get("doc_ids"))
+    blocked = _quota_guard(directory, "library")
+    if blocked:
+        return blocked
 
     def generate():
         yield sse({"type": "status", "message": "正在改写检索问题…"})
@@ -389,6 +412,9 @@ def library_ask_json():
         return jsonify({"error": "没有收到问题"}), 400
     history = _clean_history(data.get("history"))
     doc_ids = _clean_doc_ids(data.get("doc_ids"))
+    blocked = _quota_guard(directory, "library")
+    if blocked:
+        return blocked
     try:
         search_query = _search_query(question, history)
         found = library_rag.search_library(directory, search_query, doc_ids)
@@ -426,6 +452,9 @@ def library_review_stream():
         return jsonify({"error": "主题过长，请控制在 300 字以内"}), 400
     mode = data.get("mode") if data.get("mode") in ("compare", "review") else "review"
     doc_ids = _clean_doc_ids(data.get("doc_ids"))
+    blocked = _quota_guard(directory, "library")
+    if blocked:
+        return blocked
 
     def generate():
         yield sse({"type": "status", "message": "正在从文献库挑选对比/综述材料…"})
@@ -553,11 +582,206 @@ def update_document(doc_id):
         info["last_opened_at"] = now
         changed = True
 
+    if "starred" in data:
+        info["starred"] = bool(data.get("starred"))
+        changed = True
+
+    if "citation" in data:
+        raw = data.get("citation")
+        if not isinstance(raw, dict):
+            return jsonify({"error": "引用信息格式错误"}), 400
+        fields = {}
+        for key in ("authors", "year", "source", "volume",
+                    "issue", "pages", "doi", "title"):
+            value = " ".join(str(raw.get(key) or "").split())[:200]
+            if value:
+                fields[key] = value
+        kind = str(raw.get("type") or "").strip().lower()
+        if kind in {"article", "conference", "thesis", "book", "web"}:
+            fields["type"] = kind
+        if fields:
+            info["citation"] = fields
+        else:
+            info.pop("citation", None)
+        changed = True
+
     if not changed:
         return jsonify({"error": "没有要更新的字段"}), 400
 
     docs.save_info(directory, doc_id, info)
     return jsonify({"success": True, "document": docs.summary_of(info)}), 200
+
+
+@app.route("/api/documents/batch-update", methods=["POST"])
+def batch_update_documents():
+    """批量改分类、加标签、标星。整理文献库时不用一篇篇点。"""
+    user, directory = user_scope()
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids")
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "没有选中文献"}), 400
+    if len(ids) > 200:
+        return jsonify({"error": "一次最多批量处理 200 篇"}), 400
+
+    category = data.get("category")
+    starred = data.get("starred")
+    add_tags = data.get("add_tags")
+    if isinstance(add_tags, str):
+        add_tags = re.split(r"[,，、;；\s]+", add_tags)
+    if not isinstance(add_tags, list):
+        add_tags = []
+    clean_tags = []
+    for value in add_tags:
+        tag = " ".join(str(value or "").split())[:24]
+        if tag and tag not in clean_tags:
+            clean_tags.append(tag)
+
+    if category is None and starred is None and not clean_tags:
+        return jsonify({"error": "没有要修改的内容"}), 400
+
+    updated = 0
+    for doc_id in ids:
+        info = docs.load_info(directory, str(doc_id))
+        if info is None:
+            continue
+        if category is not None:
+            name = " ".join(str(category).split())[:40]
+            if name:
+                info["category"] = name
+            else:
+                info.pop("category", None)
+        if clean_tags:
+            tags = list(info.get("tags") or [])
+            for tag in clean_tags:
+                if tag not in tags:
+                    tags.append(tag)
+            info["tags"] = tags[:10]
+        if starred is not None:
+            info["starred"] = bool(starred)
+        docs.save_info(directory, doc_id, info)
+        updated += 1
+    return jsonify({"success": True, "updated": updated}), 200
+
+
+@app.route("/api/documents/<doc_id>/citation", methods=["GET"])
+def document_citation(doc_id):
+    """生成参考文献条目：GB/T 7714、APA、MLA、BibTeX 四种格式。"""
+    user, directory = user_scope()
+    info = docs.load_info(directory, doc_id)
+    if info is None:
+        return jsonify({"error": "文档不存在"}), 404
+    style = (request.args.get("style") or "gbt7714").strip().lower()
+    fields = cite.fields_of(info)
+    return jsonify({
+        "style": style,
+        "text": cite.render(style, fields),
+        "fields": fields,
+        "styles": cite.STYLES,
+        "missing": cite.missing(fields),
+    }), 200
+
+
+def _cjk_ratio(text: str) -> float:
+    if not text:
+        return 0.0
+    cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+    return cjk / max(1, len(text))
+
+
+@app.route("/api/documents/<doc_id>/selection", methods=["POST"])
+def selection_action(doc_id):
+    """划词解读：对选中的一段文字提问或翻译。
+
+    只把这段文字和相关段落发给模型，不改文档、不写进问答历史，
+    用户随手圈一句话就能问，不会污染正文问答的上下文。
+    """
+    user, directory = user_scope()
+    data = request.get_json(silent=True) or {}
+    text = " ".join(str(data.get("text") or "").split())
+    if not text:
+        return jsonify({"error": "没有收到选中的文字"}), 400
+    if len(text) > 3000:
+        return jsonify({"error": "选中的文字太长，请控制在 3000 字以内"}), 400
+    info = docs.load_info(directory, doc_id)
+    if info is None:
+        return jsonify({"error": "文档不存在"}), 404
+    blocked = _quota_guard(directory, "selection")
+    if blocked:
+        return blocked
+
+    action = str(data.get("action") or "explain").strip().lower()
+    unit = info.get("unit", "页")
+    try:
+        page = max(0, int(data.get("page") or 0))
+    except (TypeError, ValueError):
+        page = 0
+
+    if action == "translate":
+        target = str(data.get("target_lang") or "zh")
+        source = str(data.get("source_lang") or "")
+        if not source:
+            source = "zh" if _cjk_ratio(text) > 0.15 else "en"
+        if source == target:
+            target = "en" if source == "zh" else "zh"
+        try:
+            result = get_llm().translate_text(text, source, target)
+        except LLMUnavailable as exc:
+            quota.refund(directory, "selection")
+            return jsonify({"error": str(exc)}), 503
+        return jsonify({
+            "action": "translate",
+            "original": text,
+            "text": result.get("translated") or "",
+            "source_lang": source,
+            "target_lang": target,
+            "model": result.get("model", ""),
+            "quota": quota.snapshot(directory),
+        }), 200
+
+    question = " ".join(str(data.get("question") or "").split())[:300]
+    if not question:
+        question = ("这段话是什么意思？请解释它讲的内容、涉及的关键概念，"
+                    "以及它在全文里的作用。")
+
+    passages = [{
+        "page": page or 1,
+        "section": "",
+        "text": "【用户选中的原文】" + text,
+        "score": 1.0,
+    }]
+    # 选中片段一定保留；再补几条语义相关段落，帮模型结合上下文解释
+    try:
+        extra = _retrieve(directory, doc_id, info, question, question)
+    except Exception as exc:  # noqa: BLE001  索引没建好也能只靠选中文字回答
+        print(f"[划词] 补充检索失败：{type(exc).__name__}: {exc}")
+        extra = []
+    seen = {text}
+    for item in extra:
+        body = str(item.get("text") or "")
+        if not body or body in seen:
+            continue
+        seen.add(body)
+        passages.append(item)
+        if len(passages) >= PASSAGE_LIMIT:
+            break
+
+    try:
+        result = get_llm().answer_question(question, passages, unit)
+    except LLMUnavailable as exc:
+        quota.refund(directory, "selection")
+        return jsonify({"error": str(exc)}), 503
+
+    answer, invalid = sanitize_citations(result.get("text", ""),
+                                         allowed_pages(passages))
+    return jsonify({
+        "action": "explain",
+        "original": text,
+        "question": question,
+        "text": answer,
+        "invalid_citations": invalid,
+        "passages": passages_payload(passages),
+        "quota": quota.snapshot(directory),
+    }), 200
 
 
 # ==================================================================== 上传
@@ -1029,6 +1253,9 @@ def summary_stream(doc_id):
     info = docs.load_info(directory, doc_id)
     if info is None:
         return jsonify({"error": "文档不存在"}), 404
+    blocked = _quota_guard(directory, "summary")
+    if blocked:
+        return blocked
 
     def generate():
         yield sse({"type": "status", "message": "正在挑选摘要章节…"})
@@ -1068,6 +1295,9 @@ def summary_json(doc_id):
     passages = docs.select_summary_passages(info.get("chunks", []))
     if not passages:
         return jsonify({"error": "这份文档没有可用的文本片段"}), 400
+    blocked = _quota_guard(directory, "summary")
+    if blocked:
+        return blocked
     try:
         allowed = allowed_pages(passages)
         result = get_llm().generate_summary(passages, info.get("original_filename", ""),
@@ -1184,6 +1414,9 @@ def ask_stream(doc_id):
 
     unit = info.get("unit", "页")
     pages = page_references(question, unit)
+    blocked = _quota_guard(directory, "ask")
+    if blocked:
+        return blocked
 
     def generate():
         if pages:
@@ -1249,6 +1482,9 @@ def ask_json(doc_id):
         return jsonify({"error": "文档不存在"}), 404
     unit = info.get("unit", "页")
     pages = page_references(question, unit)
+    blocked = _quota_guard(directory, "ask")
+    if blocked:
+        return blocked
     try:
         search_query = question if pages else _search_query(question, history, unit)
         passages = _retrieve(directory, doc_id, info, search_query, question)
@@ -1280,6 +1516,10 @@ def translate_stream():
         return jsonify({"error": "没有要翻译的文本"}), 400
     if source_lang == target_lang:
         return jsonify({"error": "源语言和目标语言相同"}), 400
+    user, directory = user_scope()
+    blocked = _quota_guard(directory, "translate")
+    if blocked:
+        return blocked
 
     def generate():
         llm = get_llm()
@@ -1303,6 +1543,10 @@ def translate_json():
     text = (data.get("text") or "").strip()
     if not text:
         return jsonify({"error": "没有要翻译的文本"}), 400
+    user, directory = user_scope()
+    blocked = _quota_guard(directory, "translate")
+    if blocked:
+        return blocked
     try:
         result = get_llm().translate_text(
             text, data.get("source_lang", "en"), data.get("target_lang", "zh")
