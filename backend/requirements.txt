@@ -1,14 +1,14 @@
-# 智读小站后端依赖
+# 智读小站后端依赖（云端模型模式 / 服务器部署用）
 #
 # 安装：在 backend 目录执行
 #     pip install -r requirements.txt
 #
-# 注意 torch 的安装方式：
-#   默认这条命令装到的是 CPU 版 torch，本地建索引会很慢（一篇 100 段的论文要十几分钟）。
-#   如果机器上有 NVIDIA 显卡，建议装 CUDA 版，建索引能从十几分钟降到几秒：
-#     pip install torch --index-url https://download.pytorch.org/whl/cu128
-#   装完用 python -c "import torch;print(torch.cuda.is_available())" 应输出 True。
-#   程序会自动检测：有显卡就用显卡，没有就退回 CPU，不需要改代码。
+# 这份清单刻意**不包含 torch / sentence-transformers / transformers**。
+# 原因：这三个装完约 2~3G 磁盘，向量模型跑起来还要 1.5G+ 内存，
+# 2核2G 的服务器直接 OOM。项目默认走云端 API（见 config.py 的 EMBEDDING_PROVIDER）。
+#
+# 如果要在自己电脑上用本地模型（有显卡、想省钱、想离线），
+# 改用 requirements-local.txt，它会额外装上本地推理依赖。
 
 flask>=2.0.1
 flask-cors>=3.0.10
@@ -28,12 +28,10 @@ python-docx>=1.0.0
 # 扫描件 OCR（图片型 PDF）
 #   rapidocr + onnxruntime —— 纯 ONNX 推理，不依赖 PaddlePaddle；
 #   模型随 rapidocr 包安装，运行时不需要联网下载。
+#   2核2G 服务器建议在 .env 里设 OCR_ENABLED=0，省下约 200M 内存峰值。
 rapidocr>=3.10.0
 onnxruntime>=1.31.0
 
-# 语义检索
-sentence-transformers>=2.2.0
-transformers>=4.8.2
+# 语义检索（向量索引在本地，很轻，保留）
 faiss-cpu>=1.7.1
-torch>=1.9.0
 numpy>=1.21.0

@@ -566,7 +566,7 @@ def upload():
     user, directory = user_scope()
 
     if embedding_service.load_error:
-        return jsonify({"error": f"语义模型不可用，无法建立索引：{embedding_service.load_error}"}), 503
+        return jsonify({"error": f"向量服务不可用，无法建立索引：{embedding_service.load_error}"}), 503
     if "file" not in request.files:
         return jsonify({"error": "没有收到文件"}), 400
     file = request.files["file"]

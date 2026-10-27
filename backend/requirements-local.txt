@@ -1,0 +1,21 @@
+# 本地模型模式专用依赖
+#
+# 什么时候需要这份：
+#   - config 里 EMBEDDING_PROVIDER=local 或 RERANKER_PROVIDER=local
+#   - 也就是想让向量/重排模型在本机跑（有显卡、要离线、或想省 API 钱）
+#
+# 安装：在 backend 目录执行
+#     pip install -r requirements-local.txt
+#
+# 注意 torch 的版本：
+#   默认这条装的是 CPU 版，本地建索引会很慢（一篇 100 段的论文要十几分钟）。
+#   有 NVIDIA 显卡建议装 CUDA 版，建索引能从十几分钟降到几秒：
+#     pip install torch --index-url https://download.pytorch.org/whl/cu128
+#   装完用 python -c "import torch;print(torch.cuda.is_available())" 应输出 True。
+#   程序会自动检测：有显卡就用显卡，没有就退回 CPU，不需要改代码。
+
+-r requirements.txt
+
+sentence-transformers>=2.2.0
+transformers>=4.8.2
+torch>=1.9.0
